@@ -6,11 +6,13 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AddPhotoReducer from "../add_photo_reducer";
 import ConfirmReportReducer from "../confirm_report_reducer";
 import ReportWaitReducer from "../report_wait_reducer";
 import SetHandleReducer from "../set_handle_reducer";
 import SubmitReportReducer from "../submit_report_reducer";
 
+export type AddPhotoParams = __Infer<typeof AddPhotoReducer>;
 export type ConfirmReportParams = __Infer<typeof ConfirmReportReducer>;
 export type ReportWaitParams = __Infer<typeof ReportWaitReducer>;
 export type SetHandleParams = __Infer<typeof SetHandleReducer>;

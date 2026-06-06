@@ -34,6 +34,7 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AddPhotoReducer from "./add_photo_reducer";
 import ConfirmReportReducer from "./confirm_report_reducer";
 import ReportWaitReducer from "./report_wait_reducer";
 import SetHandleReducer from "./set_handle_reducer";
@@ -43,6 +44,7 @@ import SubmitReportReducer from "./submit_report_reducer";
 
 // Import all table schema definitions
 import ConfirmationRow from "./confirmation_table";
+import PhotoRow from "./photo_table";
 import ReportRow from "./report_table";
 import SpotRow from "./spot_table";
 import UserRow from "./user_table";
@@ -66,6 +68,23 @@ const tablesSchema = __schema({
       { name: 'confirmation_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, ConfirmationRow),
+  photo: __table({
+    name: 'photo',
+    indexes: [
+      { accessor: 'createdAt', name: 'photo_created_at_idx_btree', algorithm: 'btree', columns: [
+        'createdAt',
+      ] },
+      { accessor: 'id', name: 'photo_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'spotId', name: 'photo_spot_id_idx_btree', algorithm: 'btree', columns: [
+        'spotId',
+      ] },
+    ],
+    constraints: [
+      { name: 'photo_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, PhotoRow),
   report: __table({
     name: 'report',
     indexes: [
@@ -120,6 +139,7 @@ const tablesSchema = __schema({
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
+  __reducerSchema("add_photo", AddPhotoReducer),
   __reducerSchema("confirm_report", ConfirmReportReducer),
   __reducerSchema("report_wait", ReportWaitReducer),
   __reducerSchema("set_handle", SetHandleReducer),

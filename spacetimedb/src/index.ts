@@ -75,7 +75,20 @@ const waitTime = table(
   }
 );
 
-const spacetimedb = schema({ spot, report, user, confirmation, waitTime });
+// User-dropped photo of a spot (captured live from the camera). Stored as a
+// resized JPEG data URL; meant to be recent (clients surface the newest).
+const photo = table(
+  { name: 'photo', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    spotId: t.u64().index('btree'),
+    photographer: t.identity(),
+    data: t.string(), // resized JPEG data URL
+    createdAt: t.timestamp().index('btree'),
+  }
+);
+
+const spacetimedb = schema({ spot, report, user, confirmation, waitTime, photo });
 export default spacetimedb;
 
 // ---------------------------------------------------------------------------
@@ -246,5 +259,29 @@ export const reportWait = spacetimedb.reducer(
         createdAt: ctx.timestamp,
       });
     }
+  }
+);
+
+// Drop a freshly-captured photo of a spot. data is a resized JPEG data URL.
+// Client name: reducers.addPhoto
+export const addPhoto = spacetimedb.reducer(
+  { spotId: t.u64(), data: t.string() },
+  (ctx, { spotId, data }) => {
+    if (!ctx.db.spot.id.find(spotId)) {
+      throw new SenderError(`no spot with id ${spotId}`);
+    }
+    if (!data.startsWith('data:image/') || data.length < 100) {
+      throw new SenderError('invalid image data');
+    }
+    if (data.length > 400_000) {
+      throw new SenderError('image too large');
+    }
+    ctx.db.photo.insert({
+      id: 0n,
+      spotId,
+      photographer: ctx.sender,
+      data,
+      createdAt: ctx.timestamp,
+    });
   }
 );

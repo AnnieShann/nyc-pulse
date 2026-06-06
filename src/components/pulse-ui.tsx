@@ -1,13 +1,13 @@
 import { type CSSProperties, type ReactNode } from 'react';
-import { Check, Flame, Search, X } from 'lucide-react';
-import type { Report } from '../module_bindings/types';
+import { Camera, Check, Globe, MapPin, Navigation, Search, X } from 'lucide-react';
+import type { Photo, Report } from '../module_bindings/types';
 import {
   STATUS_META,
   NO_DATA_COLOR,
   NO_DATA_TINT,
   HOT_WINDOW_MS,
+  formatAge,
   formatCount,
-  heatColor,
   tsToMs,
   type Status,
 } from '../pulse';
@@ -287,14 +287,12 @@ export function HotRow({
   venue,
   meta: metaText,
   status,
-  heat,
   onClick,
 }: {
   rank: number;
   venue: string;
   meta: string;
   status: Status;
-  heat: number;
   onClick: () => void;
 }) {
   const s = STATUS_META[status];
@@ -359,80 +357,8 @@ export function HotRow({
         </span>
         <span style={{ fontSize: 13, color: 'var(--fg-2)' }}>{metaText}</span>
       </span>
-      <HeatBadge score={heat} />
       <StatusTag status={status} size="sm" />
     </button>
-  );
-}
-
-/* HeatBadge — compact flame + 0–100 score, colored by heat. */
-export function HeatBadge({ score }: { score: number }) {
-  const c = heatColor(score);
-  return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 3,
-        flexShrink: 0,
-        fontFamily: 'var(--font-mono)',
-        fontSize: 13,
-        fontWeight: 600,
-        color: c,
-      }}
-      title={`Heat ${score}/100`}
-    >
-      <Flame size={13} color={c} fill={score >= 66 ? c : 'none'} strokeWidth={2} />
-      {score}
-    </span>
-  );
-}
-
-/* HeatMeter — the spot's heat as a number + a saturating amber→red bar. */
-export function HeatMeter({ score }: { score: number }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-        <span
-          style={{
-            fontSize: 11,
-            textTransform: 'uppercase',
-            letterSpacing: '0.12em',
-            color: 'var(--fg-3)',
-            fontWeight: 600,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 5,
-          }}
-        >
-          <Flame size={12} color={heatColor(score)} fill={score >= 66 ? heatColor(score) : 'none'} strokeWidth={2} />
-          Heat
-        </span>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 16, fontWeight: 700, color: heatColor(score) }}>
-          {score}
-          <span style={{ fontSize: 11, color: 'var(--fg-3)', fontWeight: 500 }}> / 100</span>
-        </span>
-      </div>
-      <div
-        style={{
-          height: 6,
-          borderRadius: 999,
-          background: 'var(--ink-600)',
-          overflow: 'hidden',
-        }}
-      >
-        <div
-          style={{
-            height: '100%',
-            width: `${Math.max(score, 2)}%`,
-            borderRadius: 999,
-            background: 'linear-gradient(90deg, #ffa52c, #ff4d4f)',
-            boxShadow: score >= 50 ? '0 0 10px rgba(255,77,79,0.45)' : 'none',
-            transition: 'width var(--dur-base) var(--ease-out)',
-          }}
-        />
-      </div>
-    </div>
   );
 }
 
@@ -743,7 +669,6 @@ export type SearchItem = {
   category: string;
   status: Status | 'stale';
   waitMinutes: number | null;
-  heat: number;
 };
 
 /* SearchResults — matching places with status, wait, and heat. */
@@ -829,10 +754,152 @@ export function SearchResults({
                   <span style={{ textTransform: 'capitalize' }}> · {it.category}</span>
                 </span>
               </span>
-              <HeatBadge score={it.heat} />
             </button>
           );
         })
+      )}
+    </div>
+  );
+}
+
+/* PhotoStrip — recent live photos of a place + an "Add photo" (camera) tile. */
+export function PhotoStrip({
+  photos,
+  now,
+  onAdd,
+}: {
+  photos: Photo[];
+  now: number;
+  onAdd: () => void;
+}) {
+  return (
+    <div className="no-scrollbar" style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
+      <button
+        type="button"
+        onClick={onAdd}
+        className="press"
+        style={{
+          flexShrink: 0,
+          width: 96,
+          height: 96,
+          borderRadius: 'var(--radius-md)',
+          background: 'var(--ink-700)',
+          border: '1px dashed var(--line-2)',
+          color: 'var(--fg-2)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 6,
+          cursor: 'pointer',
+        }}
+      >
+        <Camera size={22} />
+        <span style={{ fontSize: 11, fontWeight: 600 }}>Add photo</span>
+      </button>
+      {photos.map(p => (
+        <div
+          key={p.id.toString()}
+          style={{
+            position: 'relative',
+            flexShrink: 0,
+            width: 128,
+            height: 96,
+            borderRadius: 'var(--radius-md)',
+            overflow: 'hidden',
+            background: 'var(--ink-800)',
+          }}
+        >
+          <img src={p.data} alt="spot" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          <span
+            style={{
+              position: 'absolute',
+              left: 6,
+              bottom: 6,
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+              fontWeight: 600,
+              color: '#fff',
+              background: 'rgba(0,0,0,0.6)',
+              borderRadius: 999,
+              padding: '2px 6px',
+            }}
+          >
+            {formatAge(now - tsToMs(p.createdAt))}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const placeLinkStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  height: 34,
+  padding: '0 14px',
+  borderRadius: 'var(--radius-pill)',
+  border: '1px solid var(--line-2)',
+  background: 'var(--ink-700)',
+  color: 'var(--fg-1)',
+  fontSize: 13,
+  fontWeight: 600,
+  textDecoration: 'none',
+  whiteSpace: 'nowrap',
+};
+
+/* PlaceLinks — Google-style action pills. */
+export function PlaceLinks({
+  website,
+  directionsUrl,
+  mapsUrl,
+}: {
+  website?: string;
+  directionsUrl: string;
+  mapsUrl: string;
+}) {
+  return (
+    <div className="no-scrollbar" style={{ display: 'flex', gap: 8, overflowX: 'auto' }}>
+      {website && (
+        <a href={website} target="_blank" rel="noreferrer" className="press" style={placeLinkStyle}>
+          <Globe size={14} color="var(--pulse)" /> Website
+        </a>
+      )}
+      <a href={directionsUrl} target="_blank" rel="noreferrer" className="press" style={placeLinkStyle}>
+        <Navigation size={14} color="var(--pulse)" /> Directions
+      </a>
+      <a href={mapsUrl} target="_blank" rel="noreferrer" className="press" style={placeLinkStyle}>
+        <MapPin size={14} color="var(--pulse)" /> Maps
+      </a>
+    </div>
+  );
+}
+
+/* PlaceDetails — blurb + amenity chips. */
+export function PlaceDetails({ blurb, tags }: { blurb?: string; tags?: string[] }) {
+  if (!blurb && !(tags && tags.length)) return null;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {blurb && <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5, color: 'var(--fg-2)' }}>{blurb}</p>}
+      {tags && tags.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {tags.map(t => (
+            <span
+              key={t}
+              style={{
+                fontSize: 12,
+                color: 'var(--fg-2)',
+                background: 'var(--ink-700)',
+                border: '1px solid var(--line-1)',
+                borderRadius: 'var(--radius-pill)',
+                padding: '3px 10px',
+              }}
+            >
+              {t}
+            </span>
+          ))}
+        </div>
       )}
     </div>
   );

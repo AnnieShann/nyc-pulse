@@ -11,9 +11,11 @@ import {
   CategoryChips,
   ConfirmChip,
   FeedRow,
-  HeatMeter,
   HotRow,
   OnlinePill,
+  PhotoStrip,
+  PlaceDetails,
+  PlaceLinks,
   PulseButton,
   SearchBar,
   SearchResults,
@@ -24,6 +26,9 @@ import {
   Wordmark,
   type SearchItem,
 } from './components/pulse-ui';
+import CameraCapture from './components/CameraCapture';
+import { placeInfoFor, mapsSearchUrl, mapsDirectionsUrl, type PlaceInfo } from './placeInfo';
+import type { Photo } from './module_bindings/types';
 import {
   STATUS_META,
   STATUSES,
@@ -36,6 +41,7 @@ import {
   heatScoresBySpot,
   confirmCountsByReport,
   freshWaitBySpot,
+  photosBySpot,
   hotSpots,
   handleFor,
   type Status,
@@ -53,11 +59,13 @@ function App() {
   const [onlineUsers] = useTable(tables.user.where(r => r.online.eq(true)));
   const [confirmations] = useTable(tables.confirmation);
   const [waits] = useTable(tables.waitTime);
+  const [photos] = useTable(tables.photo);
 
   const submitReport = useReducer(reducers.submitReport);
   const setHandle = useReducer(reducers.setHandle);
   const confirmReport = useReducer(reducers.confirmReport);
   const reportWait = useReducer(reducers.reportWait);
+  const addPhoto = useReducer(reducers.addPhoto);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -74,6 +82,7 @@ function App() {
   // Draft wait selection — applied locally instantly, committed on Save.
   const [waitChoice, setWaitChoice] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [cameraOpen, setCameraOpen] = useState(false);
 
   const spotsById = useMemo(() => {
     const m = new Map<bigint, Spot>();
@@ -86,6 +95,7 @@ function App() {
   // F8 confirmations per report + F9 current wait per spot.
   const confirmsByReport = useMemo(() => confirmCountsByReport(confirmations), [confirmations]);
   const waitBySpot = useMemo(() => freshWaitBySpot(waits, now), [waits, now]);
+  const photoMap = useMemo(() => photosBySpot(photos), [photos]);
 
   // Live feed sorted newest-first, but confirmed reports float up (F8).
   const feed = useMemo(() => {
@@ -132,25 +142,20 @@ function App() {
           category: s.category,
           status: (fresh && latest ? (latest.status as Status) : 'stale') as Status | 'stale',
           waitMinutes: waitBySpot.get(s.id)?.minutes ?? null,
-          heat: heatBySpot.get(s.id) ?? 0,
         };
       })
       .sort((a, b) => {
         const as = a.name.toLowerCase().startsWith(q) ? 0 : 1;
         const bs = b.name.toLowerCase().startsWith(q) ? 0 : 1;
-        return as - bs || b.heat - a.heat || a.name.localeCompare(b.name);
+        return as - bs || a.name.localeCompare(b.name);
       })
       .slice(0, 8);
-  }, [searchQuery, spots, latestBySpot, waitBySpot, heatBySpot, now]);
+  }, [searchQuery, spots, latestBySpot, waitBySpot, now]);
 
-  // Hot Now ranked by heat, filtered by active categories.
+  // Hot Now ranked by recent report count, filtered by active categories.
   const hotRanked = useMemo(
-    () =>
-      hot
-        .map(h => ({ ...h, heat: heatBySpot.get(h.spot.id) ?? 0 }))
-        .filter(h => !hiddenCats.has(h.spot.category))
-        .sort((a, b) => b.heat - a.heat || b.count - a.count),
-    [hot, heatBySpot, hiddenCats]
+    () => hot.filter(h => !hiddenCats.has(h.spot.category)),
+    [hot, hiddenCats]
   );
 
   const selectedReports = useMemo(
@@ -243,10 +248,12 @@ function App() {
   const reportPanel = selectedSpot ? (
     <ReportPanel
       spot={selectedSpot}
+      info={placeInfoFor(selectedSpot.name)}
+      photos={selectedId != null ? photoMap.get(selectedId) ?? [] : []}
+      onOpenCamera={() => setCameraOpen(true)}
       spotReports={selectedReports}
       resolveHandle={resolveHandle}
       now={now}
-      heat={selectedId != null ? heatBySpot.get(selectedId) ?? 0 : 0}
       confirms={selLatest ? confirmsByReport.get(selLatest.id) ?? 0 : 0}
       onConfirm={() => selLatest && confirmReport({ reportId: selLatest.id })}
       currentWait={curWait}
@@ -283,7 +290,6 @@ function App() {
                 venue={h.spot.name}
                 meta={`${h.spot.category} · ${h.count} ${h.count === 1 ? 'report' : 'reports'}`}
                 status={h.latest.status as Status}
-                heat={h.heat}
                 onClick={() => selectSpot(h.spot.id)}
               />
             ))
@@ -408,6 +414,17 @@ function App() {
           <div className="pt-1">{listContent}</div>
         </BottomSheet>
       )}
+
+      {cameraOpen && selectedSpot && (
+        <CameraCapture
+          spotName={selectedSpot.name}
+          onClose={() => setCameraOpen(false)}
+          onCapture={data => {
+            if (selectedId != null) addPhoto({ spotId: selectedId, data });
+            setCameraOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -464,10 +481,12 @@ const eyebrowStyle: CSSProperties = {
 
 function ReportPanel({
   spot,
+  info,
+  photos,
+  onOpenCamera,
   spotReports,
   resolveHandle,
   now,
-  heat,
   confirms,
   onConfirm,
   currentWait,
@@ -482,10 +501,12 @@ function ReportPanel({
   onClose,
 }: {
   spot: Spot;
+  info: PlaceInfo;
+  photos: Photo[];
+  onOpenCamera: () => void;
   spotReports: Report[];
   resolveHandle: (idHex: string) => string;
   now: number;
-  heat: number;
   confirms: number;
   onConfirm: () => void;
   currentWait: { minutes: number; ageMs: number } | undefined;
@@ -521,8 +542,9 @@ function ReportPanel({
           >
             {spot.name}
           </div>
-          <div style={{ fontSize: 14, color: 'var(--fg-2)', textTransform: 'capitalize' }}>
-            {spot.category}
+          <div style={{ fontSize: 14, color: 'var(--fg-2)' }}>
+            {info.price ? <>{info.price} · </> : null}
+            <span style={{ textTransform: 'capitalize' }}>{spot.category}</span>
           </div>
         </div>
         <button
@@ -542,6 +564,15 @@ function ReportPanel({
           <X size={16} strokeWidth={2.4} />
         </button>
       </div>
+
+      {/* place info (Google-style): live photos, links, details */}
+      <PhotoStrip photos={photos} now={now} onAdd={onOpenCamera} />
+      <PlaceLinks
+        website={info.website}
+        directionsUrl={mapsDirectionsUrl(spot.latitude, spot.longitude)}
+        mapsUrl={mapsSearchUrl(spot.name)}
+      />
+      <PlaceDetails blurb={info.blurb} tags={info.tags} />
 
       {/* current status + live activity */}
       <div className="flex flex-col" style={{ gap: 10 }}>
@@ -571,7 +602,6 @@ function ReportPanel({
           )}
         </div>
         <ActivityStrip reports={spotReports} now={now} />
-        <HeatMeter score={heat} />
       </div>
 
       {/* recent notes (plural) */}

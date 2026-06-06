@@ -18,6 +18,15 @@ export const Confirmation = __t.object("Confirmation", {
 });
 export type Confirmation = __Infer<typeof Confirmation>;
 
+export const Photo = __t.object("Photo", {
+  id: __t.u64(),
+  spotId: __t.u64(),
+  photographer: __t.identity(),
+  data: __t.string(),
+  createdAt: __t.timestamp(),
+});
+export type Photo = __Infer<typeof Photo>;
+
 export const Report = __t.object("Report", {
   id: __t.u64(),
   spotId: __t.u64(),

@@ -1,7 +1,7 @@
 // Shared constants + pure helpers for NYC Pulse.
 // Colors/glows/tints match the NYC Pulse design system exactly.
 import type { Timestamp } from 'spacetimedb';
-import type { Confirmation, Report, Spot, User, WaitTime } from './module_bindings/types';
+import type { Confirmation, Photo, Report, Spot, User, WaitTime } from './module_bindings/types';
 
 export type Status = 'packed' | 'filling' | 'chill' | 'dead';
 export const STATUSES: Status[] = ['packed', 'filling', 'chill', 'dead'];
@@ -123,6 +123,18 @@ export function hotSpots(
     (a, b) => b.count - a.count || tsToMs(b.latest.createdAt) - tsToMs(a.latest.createdAt)
   );
   return rows;
+}
+
+// Photos grouped by spot, newest first.
+export function photosBySpot(photos: readonly Photo[]): Map<bigint, Photo[]> {
+  const m = new Map<bigint, Photo[]>();
+  for (const p of photos) {
+    const arr = m.get(p.spotId);
+    if (arr) arr.push(p);
+    else m.set(p.spotId, [p]);
+  }
+  for (const arr of m.values()) arr.sort((a, b) => tsToMs(b.createdAt) - tsToMs(a.createdAt));
+  return m;
 }
 
 export function handleFor(users: readonly User[]): (idHex: string) => string {
