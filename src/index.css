@@ -1,30 +1,106 @@
 @import 'tailwindcss';
 
-/* ---------------------------------------------------------------------------
-   Design tokens (Tailwind v4 @theme -> exposes var(--color-*) + utilities)
---------------------------------------------------------------------------- */
-@theme {
-  --color-ink-950: #07080c;
-  --color-ink-900: #0b0d13;
-  --color-ink-850: #11131b;
-  --color-ink-800: #161922;
-  --color-ink-700: #1f2330;
-  --color-ink-600: #2a2f3e;
+/* ===========================================================================
+   NYC Pulse design tokens — verbatim from the design-system handoff
+   (tokens/colors.css, effects.css, spacing.css, typography.css).
+   These are the source of truth; components read them via var(--…).
+=========================================================================== */
+:root {
+  /* Ink scale: near-black charcoal -> lifted surfaces */
+  --ink-900: #0a0a0f;
+  --ink-800: #101017;
+  --ink-700: #15151e;
+  --ink-600: #1c1c28;
+  --ink-500: #262635;
+  --ink-400: #34344a;
 
-  --color-pulse-packed: #ff3b46;
-  --color-pulse-filling: #ff9f0a;
-  --color-pulse-chill: #2fd45e;
-  --color-pulse-dead: #6366f1;
-  --color-pulse-none: #6b7280;
+  /* Text */
+  --fg-1: #f4f4f7;
+  --fg-2: #9a9aa8;
+  --fg-3: #6c6c7c;
+  --fg-on-accent: #04140f;
 
-  --color-accent: #22d3ee;
+  /* The pulse: electric cyan accent */
+  --pulse: #2de6c8;
+  --pulse-bright: #5ff4dc;
+  --pulse-dim: #1fa690;
+  --pulse-glow: rgba(45, 230, 200, 0.38);
 
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  /* Status colors (exact — match the live app, never re-tint) */
+  --status-packed: #ff4d4f;
+  --status-filling: #ffa52c;
+  --status-chill: #27e08a;
+  --status-dead: #6c7bff;
+  --status-stale: #565663;
+
+  /* Glass / translucency */
+  --glass-surface: rgba(21, 21, 30, 0.72);
+  --glass-raised: rgba(28, 28, 40, 0.66);
+  --glass-scrim: rgba(10, 10, 15, 0.55);
+
+  /* Hairline borders */
+  --line-1: rgba(244, 244, 247, 0.08);
+  --line-2: rgba(244, 244, 247, 0.14);
+  --line-pulse: rgba(45, 230, 200, 0.4);
+
+  /* Hit targets */
+  --tap-min: 44px;
+  --tap-report: 60px;
+
+  /* Radii */
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
+
+  /* Blur */
+  --blur-sheet: 24px;
+  --blur-control: 14px;
+
+  /* Shadows + inset highlight */
+  --shadow-sheet: 0 -8px 40px rgba(0, 0, 0, 0.55);
+  --shadow-card: 0 6px 24px rgba(0, 0, 0, 0.4);
+  --shadow-pop: 0 10px 30px rgba(0, 0, 0, 0.5);
+  --inset-top: inset 0 1px 0 rgba(244, 244, 247, 0.06);
+
+  /* Glows (the "alive" layer) — kept subtle, elegant not gaudy */
+  --glow-pulse: 0 0 13px var(--pulse-glow);
+  --glow-pulse-lg: 0 0 22px var(--pulse-glow), 0 0 6px rgba(45, 230, 200, 0.5);
+  --glow-packed: 0 0 15px rgba(255, 77, 79, 0.4);
+  --glow-filling: 0 0 15px rgba(255, 165, 44, 0.36);
+  --glow-chill: 0 0 15px rgba(39, 224, 138, 0.36);
+  --glow-dead: 0 0 15px rgba(108, 123, 255, 0.36);
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 140ms;
+  --dur-base: 240ms;
+  --dur-slow: 420ms;
+  --dur-pulse: 2400ms;
 }
 
-/* ---------------------------------------------------------------------------
+/* Expose key tokens as Tailwind utilities (bg-ink-700, text-pulse, font-mono…) */
+@theme {
+  --color-ink-900: #0a0a0f;
+  --color-ink-800: #101017;
+  --color-ink-700: #15151e;
+  --color-ink-600: #1c1c28;
+  --color-ink-500: #262635;
+  --color-ink-400: #34344a;
+  --color-fg-1: #f4f4f7;
+  --color-fg-2: #9a9aa8;
+  --color-fg-3: #6c6c7c;
+  --color-pulse: #2de6c8;
+  --color-pulse-bright: #5ff4dc;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+/* ===========================================================================
    Base
---------------------------------------------------------------------------- */
+=========================================================================== */
 html,
 body,
 #root {
@@ -32,155 +108,135 @@ body,
   width: 100%;
   margin: 0;
 }
-
 html {
   color-scheme: dark;
 }
-
 body {
   font-family: var(--font-sans);
-  background: var(--color-ink-950);
-  color: #e7e9ee;
+  background: var(--ink-900);
+  color: var(--fg-1);
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
 }
-
 * {
   box-sizing: border-box;
 }
-
-/* Thin, dark scrollbars */
 *::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
 }
 *::-webkit-scrollbar-thumb {
-  background: var(--color-ink-600);
-  border-radius: 9999px;
+  background: var(--ink-500);
+  border-radius: 999px;
 }
 *::-webkit-scrollbar-track {
   background: transparent;
 }
 
-/* ---------------------------------------------------------------------------
+/* ===========================================================================
    Leaflet — dark theme overrides
---------------------------------------------------------------------------- */
+=========================================================================== */
 .leaflet-container {
   background: #05060a;
   font-family: var(--font-sans);
   outline: none;
 }
 .leaflet-control-attribution {
-  background: rgba(7, 8, 12, 0.7) !important;
-  color: #6b7280 !important;
+  background: rgba(10, 10, 15, 0.7) !important;
+  color: var(--fg-3) !important;
   backdrop-filter: blur(6px);
   border-top-left-radius: 8px;
   font-size: 10px;
 }
 .leaflet-control-attribution a {
-  color: #8b93a7 !important;
-}
-.leaflet-bar,
-.leaflet-bar a {
-  background: rgba(17, 19, 27, 0.92) !important;
-  color: #e7e9ee !important;
-  border-color: rgba(255, 255, 255, 0.08) !important;
-}
-.leaflet-bar a:hover {
-  background: rgba(42, 47, 62, 0.95) !important;
+  color: var(--fg-2) !important;
 }
 .leaflet-tooltip.pulse-tip {
-  background: rgba(11, 13, 19, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #e7e9ee;
-  border-radius: 10px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
-  padding: 7px 10px;
+  background: var(--glass-surface);
+  border: 1px solid var(--line-2);
+  color: var(--fg-1);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop);
+  padding: 7px 11px;
   font-size: 12px;
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(var(--blur-control));
+  -webkit-backdrop-filter: blur(var(--blur-control));
 }
 .leaflet-tooltip.pulse-tip::before {
-  border-top-color: rgba(11, 13, 19, 0.95) !important;
+  border-top-color: var(--line-2) !important;
 }
 
-/* ---------------------------------------------------------------------------
-   Map pins (Leaflet divIcon) — glow + gentle pulse + land burst
---------------------------------------------------------------------------- */
+/* ===========================================================================
+   Map pins (Leaflet divIcon) — glowing status dots that gently breathe.
+   18px dot centered in a 44px tap target.
+=========================================================================== */
 .pin {
   position: relative;
-  width: 44px; /* >=44px tap target */
+  width: 44px;
   height: 44px;
 }
 .pin-core {
   position: absolute;
-  inset: 15px; /* 14px core centered in 44px box */
-  border-radius: 9999px;
-  background: radial-gradient(circle at 35% 28%, color-mix(in srgb, var(--c) 70%, #fff), var(--c));
-  border: 1.5px solid rgba(255, 255, 255, 0.9);
-  box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.45),
-    0 0 10px 2px var(--c),
-    0 2px 6px rgba(0, 0, 0, 0.55);
+  inset: 13px; /* 18px dot centered in 44px */
+  border-radius: 999px;
+  background: var(--c);
+  border: 2px solid rgba(10, 10, 15, 0.55);
+  box-shadow: var(--glow);
 }
 .pin--live .pin-core {
-  animation: pin-pulse 2.6s ease-in-out infinite;
+  animation: pulse-breathe var(--dur-pulse) var(--ease-in-out) infinite;
 }
-@keyframes pin-pulse {
+@keyframes pulse-breathe {
   0%,
   100% {
-    box-shadow:
-      0 0 0 1px rgba(0, 0, 0, 0.45),
-      0 0 7px 1px var(--c),
-      0 2px 6px rgba(0, 0, 0, 0.55);
+    transform: scale(1);
+    opacity: 0.94;
   }
   50% {
-    box-shadow:
-      0 0 0 1px rgba(0, 0, 0, 0.45),
-      0 0 20px 6px var(--c),
-      0 2px 6px rgba(0, 0, 0, 0.55);
+    transform: scale(1.045);
+    opacity: 1;
   }
 }
-/* expanding halo ring for live pins */
+/* expanding ring for hot pins */
 .pin-ring {
   position: absolute;
-  inset: 15px;
-  border-radius: 9999px;
+  inset: 13px;
+  border-radius: 999px;
   border: 2px solid var(--c);
   opacity: 0;
   pointer-events: none;
 }
-.pin--live .pin-ring {
-  animation: pin-ring 2.6s ease-out infinite;
+.pin--hot .pin-ring {
+  animation: pulse-ring var(--dur-pulse) var(--ease-out) infinite;
 }
-@keyframes pin-ring {
+@keyframes pulse-ring {
   0% {
-    transform: scale(1);
-    opacity: 0.55;
+    transform: scale(0.6);
+    opacity: 0.5;
   }
-  75%,
   100% {
-    transform: scale(2.6);
+    transform: scale(2);
     opacity: 0;
   }
 }
-/* one-shot burst played when the icon is regenerated (i.e. a new report landed) */
+/* one-shot burst when a fresh report lands */
 .pin-burst {
   position: absolute;
-  inset: 15px;
-  border-radius: 9999px;
-  border: 2px solid #fff;
-  pointer-events: none;
-  animation: pin-burst 0.85s cubic-bezier(0.2, 0.7, 0.3, 1) 1;
+  inset: 13px;
+  border-radius: 999px;
+  border: 2px solid var(--fg-1, #f4f4f7);
   opacity: 0;
+  pointer-events: none;
+  animation: pin-burst 0.85s var(--ease-out) 1;
 }
 @keyframes pin-burst {
   0% {
     transform: scale(0.7);
-    opacity: 0.9;
+    opacity: 0.85;
   }
   100% {
-    transform: scale(3.4);
+    transform: scale(3.2);
     opacity: 0;
   }
 }
@@ -188,26 +244,42 @@ body {
   z-index: 1200 !important;
 }
 .pin--selected .pin-core {
-  inset: 12px;
-  border-width: 2px;
-  box-shadow:
-    0 0 0 2px #fff,
-    0 0 18px 5px var(--c),
-    0 3px 10px rgba(0, 0, 0, 0.6);
+  border-color: var(--fg-1);
+  box-shadow: var(--glow), 0 0 0 3px rgba(244, 244, 247, 0.12);
 }
 
-/* Respect reduced-motion */
 @media (prefers-reduced-motion: reduce) {
   .pin--live .pin-core,
-  .pin--live .pin-ring,
+  .pin--hot .pin-ring,
   .pin-burst {
     animation: none;
   }
 }
 
-/* utility: hide native number input artifacts, etc. could go here */
 .no-tap {
   -webkit-user-select: none;
   user-select: none;
   touch-action: none;
+}
+
+/* the heartbeat dot + any element that should gently breathe */
+.breathe {
+  animation: pulse-breathe var(--dur-pulse) var(--ease-in-out) infinite;
+}
+/* note field: hairline -> cyan + soft glow on focus */
+.pulse-input::placeholder {
+  color: var(--fg-3);
+}
+.pulse-input:focus {
+  border-color: var(--line-pulse) !important;
+  box-shadow: 0 0 0 3px rgba(45, 230, 200, 0.12);
+}
+/* desktop hover affordances for list rows */
+@media (hover: hover) {
+  .hot-row:hover {
+    background: var(--ink-500) !important;
+  }
+  .feed-row:hover {
+    background: rgba(255, 255, 255, 0.03);
+  }
 }

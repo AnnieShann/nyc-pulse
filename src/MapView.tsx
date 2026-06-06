@@ -8,6 +8,7 @@ import {
   STALE_MS,
   BURST_MS,
   colorForSpot,
+  glowForSpot,
   formatAge,
   tsToMs,
   type Status,
@@ -15,18 +16,30 @@ import {
 
 const CENTER: [number, number] = [40.7484, -73.9879]; // Herald Square
 
-function makeIcon(color: string, live: boolean, selected: boolean, burst: boolean): L.DivIcon {
-  const cls = ['pin', live ? 'pin--live' : '', selected ? 'pin--selected' : ''].join(' ');
+function makeIcon(
+  color: string,
+  glow: string,
+  live: boolean,
+  hot: boolean,
+  selected: boolean,
+  burst: boolean
+): L.DivIcon {
+  const cls = [
+    'pin',
+    live ? 'pin--live' : '',
+    hot ? 'pin--hot' : '',
+    selected ? 'pin--selected' : '',
+  ].join(' ');
   return L.divIcon({
     className: 'pin-wrap',
-    html: `<div class="${cls}" style="--c:${color}">
-      ${live ? '<span class="pin-ring"></span>' : ''}
+    html: `<div class="${cls}" style="--c:${color};--glow:${glow}">
+      ${hot ? '<span class="pin-ring"></span>' : ''}
       ${burst ? '<span class="pin-burst"></span>' : ''}
       <span class="pin-core"></span>
     </div>`,
     iconSize: [44, 44],
     iconAnchor: [22, 22],
-    tooltipAnchor: [0, -16],
+    tooltipAnchor: [0, -14],
   });
 }
 
@@ -34,23 +47,25 @@ function PinMarker({
   spot,
   latest,
   now,
+  hot,
   selected,
   onSelect,
 }: {
   spot: Spot;
   latest: Report | undefined;
   now: number;
+  hot: boolean;
   selected: boolean;
   onSelect: (id: bigint) => void;
 }) {
   const fresh = !!latest && now - tsToMs(latest.createdAt) <= STALE_MS;
   const color = colorForSpot(latest, now);
-  // burstKey changes only when a *new, very recent* report arrives -> replays the burst.
+  const glow = glowForSpot(latest, now);
   const burstKey = latest && now - tsToMs(latest.createdAt) <= BURST_MS ? latest.id.toString() : '';
 
   const icon = useMemo(
-    () => makeIcon(color, fresh, selected, burstKey !== ''),
-    [color, fresh, selected, burstKey]
+    () => makeIcon(color, glow, fresh, hot && fresh, selected, burstKey !== ''),
+    [color, glow, fresh, hot, selected, burstKey]
   );
 
   return (
@@ -60,15 +75,15 @@ function PinMarker({
       eventHandlers={{ click: () => onSelect(spot.id) }}
     >
       <Tooltip className="pulse-tip" direction="top" opacity={1}>
-        <div className="font-semibold text-white">{spot.name}</div>
-        <div className="mt-0.5">
+        <div style={{ fontWeight: 600, color: 'var(--fg-1)' }}>{spot.name}</div>
+        <div style={{ marginTop: 2 }}>
           {fresh && latest ? (
             <span style={{ color: STATUS_META[latest.status as Status]?.color }}>
               ● {STATUS_META[latest.status as Status]?.label ?? latest.status}
-              <span className="text-zinc-400"> · {formatAge(now - tsToMs(latest.createdAt))}</span>
+              <span style={{ color: 'var(--fg-3)' }}> · {formatAge(now - tsToMs(latest.createdAt))}</span>
             </span>
           ) : (
-            <span style={{ color: NO_DATA_COLOR }}>● no recent reports</span>
+            <span style={{ color: NO_DATA_COLOR }}>● No data</span>
           )}
         </div>
       </Tooltip>
@@ -76,16 +91,12 @@ function PinMarker({
   );
 }
 
-// Pans a selected spot into the visible area above the bottom sheet (mobile).
 function PanToSelected({ spot, enabled }: { spot: Spot | null; enabled: boolean }) {
   const map = useMap();
   useEffect(() => {
     if (!spot) return;
     map.setView([spot.latitude, spot.longitude], Math.max(map.getZoom(), 15), { animate: true });
-    if (enabled) {
-      // nudge the centered point upward so the collapsed sheet doesn't cover it
-      map.panBy([0, Math.round(map.getSize().y * 0.16)], { animate: true });
-    }
+    if (enabled) map.panBy([0, Math.round(map.getSize().y * 0.16)], { animate: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spot?.id, enabled]);
   return null;
@@ -94,6 +105,7 @@ function PanToSelected({ spot, enabled }: { spot: Spot | null; enabled: boolean 
 type Props = {
   spots: readonly Spot[];
   latestBySpot: Map<bigint, Report>;
+  hotIds: Set<bigint>;
   now: number;
   selectedId: bigint | null;
   selectedSpot: Spot | null;
@@ -104,6 +116,7 @@ type Props = {
 export default function MapView({
   spots,
   latestBySpot,
+  hotIds,
   now,
   selectedId,
   selectedSpot,
@@ -120,8 +133,7 @@ export default function MapView({
       attributionControl
     >
       <TileLayer
-        // NOTE: host is "basemaps" (plural). The singular "basemap.cartocdn.com"
-        // host is deprecated and no longer resolves, which renders a black map.
+        // host is "basemaps" (plural); the singular host is deprecated.
         url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
         subdomains="abcd"
@@ -133,6 +145,7 @@ export default function MapView({
           spot={spot}
           latest={latestBySpot.get(spot.id)}
           now={now}
+          hot={hotIds.has(spot.id)}
           selected={selectedId === spot.id}
           onSelect={onSelect}
         />

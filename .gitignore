@@ -9,3 +9,6 @@ spacetime.local.json
 # Local Claude Code settings (not code)
 .claude/
 tsconfig.tsbuildinfo
+
+# Vercel
+.vercel

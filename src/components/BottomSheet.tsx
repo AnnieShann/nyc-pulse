@@ -73,21 +73,30 @@ export default function BottomSheet({ open, onOpenChange, peek, children }: Prop
   return (
     <div
       ref={elRef}
-      className="fixed inset-x-0 bottom-0 z-[1500] flex h-[86dvh] flex-col rounded-t-3xl border-t border-white/10 bg-ink-900/90 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.6)] transition-transform duration-300 ease-[cubic-bezier(0.22,0.61,0.36,1)]"
-      style={{ transform: resting }}
+      className="fixed inset-x-0 bottom-0 z-[1500] flex h-[86dvh] flex-col transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]"
+      style={{
+        transform: resting,
+        background: 'var(--glass-surface)',
+        borderTop: '1px solid var(--line-1)',
+        borderTopLeftRadius: 'var(--radius-xl)',
+        borderTopRightRadius: 'var(--radius-xl)',
+        boxShadow: 'var(--inset-top), var(--shadow-sheet)',
+        backdropFilter: 'blur(var(--blur-sheet))',
+        WebkitBackdropFilter: 'blur(var(--blur-sheet))',
+      }}
     >
       {/* Visible-when-collapsed region */}
       <div ref={topRef} className="shrink-0">
         {/* Grab bar — the only draggable element */}
         <div
-          className="no-tap cursor-grab active:cursor-grabbing pt-2.5 pb-1"
+          className="no-tap cursor-grab active:cursor-grabbing pt-2.5 pb-1.5"
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
           onClick={() => onOpenChange(!open)}
         >
-          <div className="mx-auto h-1.5 w-11 rounded-full bg-white/25" />
+          <div className="mx-auto h-[5px] w-[38px] rounded-full" style={{ background: 'var(--ink-400)' }} />
         </div>
         <div className="px-3 pb-2">{peek}</div>
       </div>
