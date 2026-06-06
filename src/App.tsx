@@ -113,10 +113,15 @@ function App() {
     );
   }
 
+  const selectedLatest = selectedSpot ? latestBySpot.get(selectedSpot.id) : undefined;
+  const selectedLatestHandle = selectedLatest
+    ? atHandle(resolveHandle(selectedLatest.reporter.toHexString()))
+    : undefined;
   const reportPanel = selectedSpot ? (
     <ReportPanel
       spot={selectedSpot}
-      latest={latestBySpot.get(selectedSpot.id)}
+      latest={selectedLatest}
+      latestHandle={selectedLatestHandle}
       now={now}
       choice={choice}
       setChoice={setChoice}
@@ -285,6 +290,7 @@ function TapPrompt() {
 function ReportPanel({
   spot,
   latest,
+  latestHandle,
   now,
   choice,
   setChoice,
@@ -295,6 +301,7 @@ function ReportPanel({
 }: {
   spot: Spot;
   latest: Report | undefined;
+  latestHandle?: string;
   now: number;
   choice: Status | null;
   setChoice: (s: Status) => void;
@@ -363,6 +370,30 @@ function ReportPanel({
           </>
         )}
       </div>
+
+      {/* most recent report's note (read-only context) */}
+      {latest?.note && (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+            padding: '10px 12px',
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--ink-800)',
+            border: '1px solid var(--line-1)',
+          }}
+        >
+          <span style={{ fontSize: 14, color: 'var(--fg-1)', lineHeight: 1.45 }}>
+            “{latest.note}”
+          </span>
+          {latestHandle && (
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--pulse)' }}>
+              {latestHandle}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* prompt */}
       <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--fg-1)' }}>How's it right now?</span>
