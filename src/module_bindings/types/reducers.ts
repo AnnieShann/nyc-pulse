@@ -10,11 +10,17 @@ import AddPhotoReducer from "../add_photo_reducer";
 import ConfirmReportReducer from "../confirm_report_reducer";
 import ReportWaitReducer from "../report_wait_reducer";
 import SetHandleReducer from "../set_handle_reducer";
+import SetProfileReducer from "../set_profile_reducer";
+import SetSavedPublicReducer from "../set_saved_public_reducer";
 import SubmitReportReducer from "../submit_report_reducer";
+import ToggleSavedReducer from "../toggle_saved_reducer";
 
 export type AddPhotoParams = __Infer<typeof AddPhotoReducer>;
 export type ConfirmReportParams = __Infer<typeof ConfirmReportReducer>;
 export type ReportWaitParams = __Infer<typeof ReportWaitReducer>;
 export type SetHandleParams = __Infer<typeof SetHandleReducer>;
+export type SetProfileParams = __Infer<typeof SetProfileReducer>;
+export type SetSavedPublicParams = __Infer<typeof SetSavedPublicReducer>;
 export type SubmitReportParams = __Infer<typeof SubmitReportReducer>;
+export type ToggleSavedParams = __Infer<typeof ToggleSavedReducer>;
 

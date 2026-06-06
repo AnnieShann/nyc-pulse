@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { tables, reducers } from './module_bindings';
 import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/react';
-import { Check, ChevronUp, Clock, Pencil, X } from 'lucide-react';
+import { Bookmark, ChevronUp, Clock, X } from 'lucide-react';
 import type { Report, Spot } from './module_bindings/types';
 import MapView from './MapView';
 import BottomSheet from './components/BottomSheet';
@@ -27,6 +27,7 @@ import {
   type SearchItem,
 } from './components/pulse-ui';
 import CameraCapture from './components/CameraCapture';
+import { Onboarding, ProfileEditModal } from './components/Profile';
 import { placeInfoFor, mapsSearchUrl, mapsDirectionsUrl, type PlaceInfo } from './placeInfo';
 import type { Photo } from './module_bindings/types';
 import {
@@ -60,12 +61,16 @@ function App() {
   const [confirmations] = useTable(tables.confirmation);
   const [waits] = useTable(tables.waitTime);
   const [photos] = useTable(tables.photo);
+  const [profiles, profilesReady] = useTable(tables.profile);
+  const [saved] = useTable(tables.savedSpot);
 
   const submitReport = useReducer(reducers.submitReport);
-  const setHandle = useReducer(reducers.setHandle);
   const confirmReport = useReducer(reducers.confirmReport);
   const reportWait = useReducer(reducers.reportWait);
   const addPhoto = useReducer(reducers.addPhoto);
+  const setProfile = useReducer(reducers.setProfile);
+  const toggleSaved = useReducer(reducers.toggleSaved);
+  const setSavedPublic = useReducer(reducers.setSavedPublic);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -76,8 +81,9 @@ function App() {
   const [selectedId, setSelectedId] = useState<bigint | null>(null);
   const [choice, setChoice] = useState<Status | null>(null);
   const [note, setNote] = useState('');
-  const [tab, setTab] = useState<'hot' | 'feed'>('hot');
+  const [tab, setTab] = useState<'hot' | 'feed' | 'saved'>('hot');
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [editProfile, setEditProfile] = useState(false);
   const [toast, setToast] = useState<{ status: Status | null; venue: string } | null>(null);
   // Draft wait selection — applied locally instantly, committed on Save.
   const [waitChoice, setWaitChoice] = useState<number | null>(null);
@@ -176,11 +182,38 @@ function App() {
     feedSeeded.current = true;
   }, [feed]);
   const isNewReport = (id: bigint) => feedSeeded.current && !seenFeed.current.has(id.toString());
-  const myHandle = useMemo(() => {
-    if (!identity) return null;
-    const hex = identity.toHexString();
-    return users.find(u => u.identity.toHexString() === hex)?.handle ?? null;
-  }, [users, identity]);
+  const myHex = identity?.toHexString() ?? '';
+  const myHandle = useMemo(
+    () => users.find(u => u.identity.toHexString() === myHex)?.handle ?? null,
+    [users, myHex]
+  );
+  const myProfile = useMemo(
+    () => profiles.find(p => p.identity.toHexString() === myHex),
+    [profiles, myHex]
+  );
+  const mySavedIds = useMemo(
+    () => new Set(saved.filter(s => s.owner.toHexString() === myHex).map(s => s.spotId)),
+    [saved, myHex]
+  );
+  const savedItems = useMemo<SearchItem[]>(
+    () =>
+      [...mySavedIds]
+        .map(id => spotsById.get(id))
+        .filter((s): s is Spot => !!s)
+        .map(s => {
+          const latest = latestBySpot.get(s.id);
+          const fresh = !!latest && now - tsToMs(latest.createdAt) <= STALE_MS;
+          return {
+            id: s.id,
+            name: s.name,
+            category: s.category,
+            status: (fresh && latest ? (latest.status as Status) : 'stale') as Status | 'stale',
+            waitMinutes: waitBySpot.get(s.id)?.minutes ?? null,
+          };
+        })
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [mySavedIds, spotsById, latestBySpot, waitBySpot, now]
+  );
 
   const selectedSpot = selectedId != null ? spotsById.get(selectedId) ?? null : null;
 
@@ -226,7 +259,7 @@ function App() {
     resetDraft();
   };
 
-  if (!connected) {
+  if (!connected || !profilesReady) {
     return (
       <div className="grid h-[100dvh] place-items-center" style={{ background: 'var(--ink-900)' }}>
         <div className="flex flex-col items-center gap-3">
@@ -236,6 +269,14 @@ function App() {
           </p>
         </div>
       </div>
+    );
+  }
+  if (identity && !myProfile?.onboarded) {
+    return (
+      <Onboarding
+        initial={{ name: '', email: '', bio: '', avatar: '' }}
+        onComplete={v => setProfile({ name: v.name, email: v.email, bio: v.bio, avatar: v.avatar })}
+      />
     );
   }
 
@@ -251,6 +292,8 @@ function App() {
       info={placeInfoFor(selectedSpot.name)}
       photos={selectedId != null ? photoMap.get(selectedId) ?? [] : []}
       onOpenCamera={() => setCameraOpen(true)}
+      isSaved={selectedId != null && mySavedIds.has(selectedId)}
+      onToggleSave={() => selectedId != null && toggleSaved({ spotId: selectedId })}
       spotReports={selectedReports}
       resolveHandle={resolveHandle}
       now={now}
@@ -276,8 +319,47 @@ function App() {
 
   const listContent = (
     <div className="flex flex-col gap-3">
-      <Segmented value={tab} onChange={setTab} />
-      {tab === 'hot' ? (
+      <Segmented
+        value={tab}
+        onChange={setTab}
+        options={[
+          { k: 'hot', label: 'Hot Now' },
+          { k: 'feed', label: 'Live' },
+          { k: 'saved', label: 'Saved' },
+        ]}
+      />
+      {tab === 'saved' ? (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span style={{ fontSize: 19, fontWeight: 600, color: 'var(--fg-1)', letterSpacing: '-0.02em' }}>
+              Saved
+            </span>
+            <button
+              type="button"
+              className="press"
+              onClick={() => setSavedPublic({ isPublic: !myProfile?.savedPublic })}
+              style={{
+                height: 30,
+                padding: '0 12px',
+                borderRadius: 'var(--radius-pill)',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                background: myProfile?.savedPublic ? 'rgba(45,230,200,0.14)' : 'var(--ink-600)',
+                border: `1px solid ${myProfile?.savedPublic ? 'var(--line-pulse)' : 'var(--line-1)'}`,
+                color: myProfile?.savedPublic ? 'var(--pulse)' : 'var(--fg-2)',
+              }}
+            >
+              {myProfile?.savedPublic ? 'Public' : 'Make public'}
+            </button>
+          </div>
+          {savedItems.length === 0 ? (
+            <Empty>No saved spots yet. Tap the bookmark on a spot to save it.</Empty>
+          ) : (
+            <SearchResults items={savedItems} onPick={selectSpot} />
+          )}
+        </div>
+      ) : tab === 'hot' ? (
         <div className="flex flex-col gap-2">
           <SectionHead title="Hot Now" hint="last 30 min" />
           {hotRanked.length === 0 ? (
@@ -350,7 +432,11 @@ function App() {
         >
           <div className="pointer-events-auto flex items-center justify-between gap-2">
             <OnlinePill count={onlineUsers.length} />
-            <HandleChip current={myHandle} onSet={name => setHandle({ name })} />
+            <ProfileChip
+              name={myHandle ?? 'you'}
+              avatar={myProfile?.avatar ?? ''}
+              onClick={() => setEditProfile(true)}
+            />
           </div>
           <SearchBar
             value={searchQuery}
@@ -425,6 +511,22 @@ function App() {
           }}
         />
       )}
+
+      {editProfile && (
+        <ProfileEditModal
+          initial={{
+            name: myHandle ?? '',
+            email: myProfile?.email ?? '',
+            bio: myProfile?.bio ?? '',
+            avatar: myProfile?.avatar ?? '',
+          }}
+          onSave={v => {
+            setProfile({ name: v.name, email: v.email, bio: v.bio, avatar: v.avatar });
+            setEditProfile(false);
+          }}
+          onClose={() => setEditProfile(false)}
+        />
+      )}
     </div>
   );
 }
@@ -484,6 +586,8 @@ function ReportPanel({
   info,
   photos,
   onOpenCamera,
+  isSaved,
+  onToggleSave,
   spotReports,
   resolveHandle,
   now,
@@ -504,6 +608,8 @@ function ReportPanel({
   info: PlaceInfo;
   photos: Photo[];
   onOpenCamera: () => void;
+  isSaved: boolean;
+  onToggleSave: () => void;
   spotReports: Report[];
   resolveHandle: (idHex: string) => string;
   now: number;
@@ -547,22 +653,42 @@ function ReportPanel({
             <span style={{ textTransform: 'capitalize' }}>{spot.category}</span>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close"
-          className="grid shrink-0 place-items-center"
-          style={{
-            width: 36,
-            height: 36,
-            borderRadius: 999,
-            background: 'var(--ink-600)',
-            border: '1px solid var(--line-1)',
-            color: 'var(--fg-2)',
-          }}
-        >
-          <X size={16} strokeWidth={2.4} />
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={onToggleSave}
+            aria-label={isSaved ? 'Remove from saved' : 'Save to list'}
+            title={isSaved ? 'Saved' : 'Save to your list'}
+            className="press grid place-items-center"
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 999,
+              background: isSaved ? 'rgba(45,230,200,0.14)' : 'var(--ink-600)',
+              border: `1px solid ${isSaved ? 'var(--line-pulse)' : 'var(--line-1)'}`,
+              color: isSaved ? 'var(--pulse)' : 'var(--fg-2)',
+              cursor: 'pointer',
+            }}
+          >
+            <Bookmark size={16} strokeWidth={2.2} fill={isSaved ? 'var(--pulse)' : 'none'} />
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="grid place-items-center"
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 999,
+              background: 'var(--ink-600)',
+              border: '1px solid var(--line-1)',
+              color: 'var(--fg-2)',
+            }}
+          >
+            <X size={16} strokeWidth={2.4} />
+          </button>
+        </div>
       </div>
 
       {/* place info (Google-style): live photos, links, details */}
@@ -772,78 +898,63 @@ function Legend() {
   );
 }
 
-function HandleChip({ current, onSet }: { current: string | null; onSet: (name: string) => void }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState('');
-  useEffect(() => setDraft(current ?? ''), [current]);
-
-  const chrome: React.CSSProperties = {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 8,
-    minHeight: 'var(--tap-min)',
-    height: 36,
-    padding: '0 8px 0 12px',
-    borderRadius: 'var(--radius-pill)',
-    background: 'var(--glass-raised)',
-    border: '1px solid var(--line-2)',
-    backdropFilter: 'blur(var(--blur-control))',
-    WebkitBackdropFilter: 'blur(var(--blur-control))',
-  };
-
-  if (!editing) {
-    return (
-      <button type="button" onClick={() => setEditing(true)} style={{ ...chrome, cursor: 'pointer' }}>
-        <Pencil size={12} color="var(--fg-3)" />
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--fg-1)', fontWeight: 500 }}>
-          {current ? atHandle(current) : '@you'}
-        </span>
-        <span
-          style={{
-            width: 22,
-            height: 22,
-            borderRadius: 999,
-            background: 'linear-gradient(135deg, var(--pulse-dim), var(--status-dead))',
-          }}
-        />
-      </button>
-    );
-  }
+function ProfileChip({
+  name,
+  avatar,
+  onClick,
+}: {
+  name: string;
+  avatar: string;
+  onClick: () => void;
+}) {
   return (
-    <form
-      onSubmit={e => {
-        e.preventDefault();
-        const name = draft.trim();
-        if (name) onSet(name);
-        setEditing(false);
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="Edit profile"
+      className="press"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 8,
+        minHeight: 'var(--tap-min)',
+        height: 36,
+        padding: '0 6px 0 12px',
+        borderRadius: 'var(--radius-pill)',
+        background: 'var(--glass-raised)',
+        border: '1px solid var(--line-2)',
+        backdropFilter: 'blur(var(--blur-control))',
+        WebkitBackdropFilter: 'blur(var(--blur-control))',
+        color: 'var(--fg-1)',
+        cursor: 'pointer',
       }}
-      style={chrome}
     >
-      <input
-        autoFocus
-        value={draft}
-        maxLength={24}
-        onChange={e => setDraft(e.target.value)}
-        placeholder="handle"
+      <span
         style={{
-          width: 96,
-          background: 'transparent',
-          border: 'none',
-          outline: 'none',
           fontFamily: 'var(--font-mono)',
           fontSize: 13,
-          color: 'var(--fg-1)',
+          fontWeight: 500,
+          maxWidth: 92,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
         }}
-      />
-      <button
-        type="submit"
-        aria-label="Save handle"
-        className="grid place-items-center"
-        style={{ width: 26, height: 26, borderRadius: 999, background: 'var(--pulse)', color: 'var(--fg-on-accent)' }}
       >
-        <Check size={14} strokeWidth={2.5} />
-      </button>
-    </form>
+        {atHandle(name)}
+      </span>
+      <span
+        style={{
+          width: 24,
+          height: 24,
+          flexShrink: 0,
+          borderRadius: 999,
+          overflow: 'hidden',
+          background: avatar ? 'transparent' : 'linear-gradient(135deg, var(--pulse-dim), var(--status-dead))',
+        }}
+      >
+        {avatar ? <img src={avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : null}
+      </span>
+    </button>
   );
 }
 

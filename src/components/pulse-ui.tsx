@@ -227,23 +227,21 @@ export function PulseButton({
   );
 }
 
-/* Segmented switch — Hot Now / Live. */
-export function Segmented({
+/* Segmented switch (generic). */
+export function Segmented<T extends string>({
   value,
   onChange,
+  options,
 }: {
-  value: 'hot' | 'feed';
-  onChange: (v: 'hot' | 'feed') => void;
+  value: T;
+  onChange: (v: T) => void;
+  options: Array<{ k: T; label: string }>;
 }) {
-  const opts: Array<{ k: 'hot' | 'feed'; label: string }> = [
-    { k: 'hot', label: 'Hot Now' },
-    { k: 'feed', label: 'Live' },
-  ];
   return (
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
+        gridTemplateColumns: `repeat(${options.length}, 1fr)`,
         gap: 4,
         padding: 4,
         background: 'var(--ink-800)',
@@ -251,7 +249,7 @@ export function Segmented({
         border: '1px solid var(--line-1)',
       }}
     >
-      {opts.map(o => {
+      {options.map(o => {
         const on = value === o.k;
         return (
           <button

@@ -27,6 +27,16 @@ export const Photo = __t.object("Photo", {
 });
 export type Photo = __Infer<typeof Photo>;
 
+export const Profile = __t.object("Profile", {
+  identity: __t.identity(),
+  email: __t.string(),
+  bio: __t.string(),
+  avatar: __t.string(),
+  savedPublic: __t.bool(),
+  onboarded: __t.bool(),
+});
+export type Profile = __Infer<typeof Profile>;
+
 export const Report = __t.object("Report", {
   id: __t.u64(),
   spotId: __t.u64(),
@@ -36,6 +46,14 @@ export const Report = __t.object("Report", {
   createdAt: __t.timestamp(),
 });
 export type Report = __Infer<typeof Report>;
+
+export const SavedSpot = __t.object("SavedSpot", {
+  id: __t.u64(),
+  owner: __t.identity(),
+  spotId: __t.u64(),
+  createdAt: __t.timestamp(),
+});
+export type SavedSpot = __Infer<typeof SavedSpot>;
 
 export const Spot = __t.object("Spot", {
   id: __t.u64(),

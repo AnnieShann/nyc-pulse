@@ -38,14 +38,19 @@ import AddPhotoReducer from "./add_photo_reducer";
 import ConfirmReportReducer from "./confirm_report_reducer";
 import ReportWaitReducer from "./report_wait_reducer";
 import SetHandleReducer from "./set_handle_reducer";
+import SetProfileReducer from "./set_profile_reducer";
+import SetSavedPublicReducer from "./set_saved_public_reducer";
 import SubmitReportReducer from "./submit_report_reducer";
+import ToggleSavedReducer from "./toggle_saved_reducer";
 
 // Import all procedure arg schemas
 
 // Import all table schema definitions
 import ConfirmationRow from "./confirmation_table";
 import PhotoRow from "./photo_table";
+import ProfileRow from "./profile_table";
 import ReportRow from "./report_table";
+import SavedSpotRow from "./saved_spot_table";
 import SpotRow from "./spot_table";
 import UserRow from "./user_table";
 import WaitTimeRow from "./wait_time_table";
@@ -85,6 +90,17 @@ const tablesSchema = __schema({
       { name: 'photo_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, PhotoRow),
+  profile: __table({
+    name: 'profile',
+    indexes: [
+      { accessor: 'identity', name: 'profile_identity_idx_btree', algorithm: 'btree', columns: [
+        'identity',
+      ] },
+    ],
+    constraints: [
+      { name: 'profile_identity_key', constraint: 'unique', columns: ['identity'] },
+    ],
+  }, ProfileRow),
   report: __table({
     name: 'report',
     indexes: [
@@ -102,6 +118,23 @@ const tablesSchema = __schema({
       { name: 'report_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, ReportRow),
+  savedSpot: __table({
+    name: 'saved_spot',
+    indexes: [
+      { accessor: 'id', name: 'saved_spot_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'owner', name: 'saved_spot_owner_idx_btree', algorithm: 'btree', columns: [
+        'owner',
+      ] },
+      { accessor: 'spotId', name: 'saved_spot_spot_id_idx_btree', algorithm: 'btree', columns: [
+        'spotId',
+      ] },
+    ],
+    constraints: [
+      { name: 'saved_spot_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, SavedSpotRow),
   spot: __table({
     name: 'spot',
     indexes: [
@@ -143,7 +176,10 @@ const reducersSchema = __reducers(
   __reducerSchema("confirm_report", ConfirmReportReducer),
   __reducerSchema("report_wait", ReportWaitReducer),
   __reducerSchema("set_handle", SetHandleReducer),
+  __reducerSchema("set_profile", SetProfileReducer),
+  __reducerSchema("set_saved_public", SetSavedPublicReducer),
   __reducerSchema("submit_report", SubmitReportReducer),
+  __reducerSchema("toggle_saved", ToggleSavedReducer),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */

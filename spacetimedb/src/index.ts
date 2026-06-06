@@ -88,7 +88,41 @@ const photo = table(
   }
 );
 
-const spacetimedb = schema({ spot, report, user, confirmation, waitTime, photo });
+// User profile (lightweight): email/bio/avatar live here; the display name stays
+// on `user.handle`. onboarded gates the first-run onboarding screen.
+const profile = table(
+  { name: 'profile', public: true },
+  {
+    identity: t.identity().primaryKey(),
+    email: t.string(),
+    bio: t.string(),
+    avatar: t.string(), // resized data URL or ''
+    savedPublic: t.bool(), // is this user's saved list public
+    onboarded: t.bool(),
+  }
+);
+
+// A user's saved/favorite spot.
+const savedSpot = table(
+  { name: 'saved_spot', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    owner: t.identity().index('btree'),
+    spotId: t.u64().index('btree'),
+    createdAt: t.timestamp(),
+  }
+);
+
+const spacetimedb = schema({
+  spot,
+  report,
+  user,
+  confirmation,
+  waitTime,
+  photo,
+  profile,
+  savedSpot,
+});
 export default spacetimedb;
 
 // ---------------------------------------------------------------------------
@@ -259,6 +293,71 @@ export const reportWait = spacetimedb.reducer(
         createdAt: ctx.timestamp,
       });
     }
+  }
+);
+
+// Onboard / edit profile: sets display name (user.handle) + email/bio/avatar.
+// Client name: reducers.setProfile
+export const setProfile = spacetimedb.reducer(
+  { name: t.string(), email: t.string(), bio: t.string(), avatar: t.string() },
+  (ctx, { name, email, bio, avatar }) => {
+    if (avatar.length > 400_000) {
+      throw new SenderError('avatar too large');
+    }
+    const handle = name.trim().slice(0, 24) || `anon-${ctx.random.integerInRange(1000, 9999)}`;
+    const u = ctx.db.user.identity.find(ctx.sender);
+    if (u) ctx.db.user.identity.update({ ...u, handle });
+    else ctx.db.user.insert({ identity: ctx.sender, handle, online: true });
+
+    const p = ctx.db.profile.identity.find(ctx.sender);
+    const next = {
+      email: email.trim().slice(0, 120),
+      bio: bio.trim().slice(0, 200),
+      avatar,
+    };
+    if (p) ctx.db.profile.identity.update({ ...p, ...next });
+    else
+      ctx.db.profile.insert({
+        identity: ctx.sender,
+        ...next,
+        savedPublic: false,
+        onboarded: true,
+      });
+  }
+);
+
+// Toggle whether the caller's saved list is public. Client: reducers.setSavedPublic
+export const setSavedPublic = spacetimedb.reducer(
+  { isPublic: t.bool() },
+  (ctx, { isPublic }) => {
+    const p = ctx.db.profile.identity.find(ctx.sender);
+    if (p) ctx.db.profile.identity.update({ ...p, savedPublic: isPublic });
+    else
+      ctx.db.profile.insert({
+        identity: ctx.sender,
+        email: '',
+        bio: '',
+        avatar: '',
+        savedPublic: isPublic,
+        onboarded: false,
+      });
+  }
+);
+
+// Save/unsave a spot (toggle). Client: reducers.toggleSaved
+export const toggleSaved = spacetimedb.reducer(
+  { spotId: t.u64() },
+  (ctx, { spotId }) => {
+    if (!ctx.db.spot.id.find(spotId)) {
+      throw new SenderError(`no spot with id ${spotId}`);
+    }
+    for (const s of ctx.db.savedSpot.spotId.filter(spotId)) {
+      if (s.owner.equals(ctx.sender)) {
+        ctx.db.savedSpot.id.delete(s.id);
+        return;
+      }
+    }
+    ctx.db.savedSpot.insert({ id: 0n, owner: ctx.sender, spotId, createdAt: ctx.timestamp });
   }
 );
 
