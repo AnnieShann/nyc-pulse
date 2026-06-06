@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { tables, reducers } from './module_bindings';
 import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/react';
 import { Check, ChevronUp, Clock, Pencil, X } from 'lucide-react';
@@ -66,10 +66,9 @@ function App() {
   const [note, setNote] = useState('');
   const [tab, setTab] = useState<'hot' | 'feed'>('hot');
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [toast, setToast] = useState<{ status: Status; venue: string } | null>(null);
-  // Optimistic wait selection: show the tapped value instantly (the reducer
-  // round-trips to Maincloud; without this the chip feels dead until it syncs).
-  const [waitDraft, setWaitDraft] = useState<{ spotId: bigint; minutes: number } | null>(null);
+  const [toast, setToast] = useState<{ status: Status | null; venue: string } | null>(null);
+  // Draft wait selection — applied locally instantly, committed on Save.
+  const [waitChoice, setWaitChoice] = useState<number | null>(null);
 
   const spotsById = useMemo(() => {
     const m = new Map<bigint, Spot>();
@@ -82,13 +81,6 @@ function App() {
   // F8 confirmations per report + F9 current wait per spot.
   const confirmsByReport = useMemo(() => confirmCountsByReport(confirmations), [confirmations]);
   const waitBySpot = useMemo(() => freshWaitBySpot(waits, now), [waits, now]);
-
-  // Drop the optimistic draft once the live value matches what we set.
-  useEffect(() => {
-    if (!waitDraft) return;
-    const real = waitBySpot.get(waitDraft.spotId);
-    if (real && real.minutes === waitDraft.minutes) setWaitDraft(null);
-  }, [waitBySpot, waitDraft]);
 
   // Live feed sorted newest-first, but confirmed reports float up (F8).
   const feed = useMemo(() => {
@@ -156,30 +148,46 @@ function App() {
 
   const selectedSpot = selectedId != null ? spotsById.get(selectedId) ?? null : null;
 
-  const selectSpot = (id: bigint) => {
-    setSelectedId(id);
+  const resetDraft = () => {
     setChoice(null);
     setNote('');
-    setWaitDraft(null);
+    setWaitChoice(null);
+  };
+  const selectSpot = (id: bigint) => {
+    setSelectedId(id);
+    resetDraft();
     if (!isDesktop) setSheetOpen(false);
   };
   const closeReport = () => {
     setSelectedId(null);
-    setChoice(null);
-    setNote('');
-    setWaitDraft(null);
+    resetDraft();
   };
-  const onWaitReport = (minutes: number) => {
-    if (selectedId == null) return;
-    setWaitDraft({ spotId: selectedId, minutes }); // instant feedback
-    reportWait({ spotId: selectedId, minutes });
-  };
-  const dropVibe = () => {
-    if (selectedId == null || !choice || !selectedSpot) return;
-    submitReport({ spotId: selectedId, status: choice, note });
-    setToast({ status: choice, venue: selectedSpot.name });
+  const toggleChoice = (s: Status) => setChoice(c => (c === s ? null : s));
+
+  // Save whatever changed — vibe, note, and/or wait — independently. Nothing
+  // requires a status: a note rides on the chosen vibe, or the spot's current
+  // vibe if one exists.
+  const onSave = () => {
+    if (selectedId == null || !selectedSpot) return;
+    const latest = selectedReports[0];
+    const curWait = waitBySpot.get(selectedId)?.minutes ?? null;
+    const waitChanged = waitChoice !== null && waitChoice !== curWait;
+    const status: Status | null =
+      choice ?? (note.trim() !== '' && latest ? (latest.status as Status) : null);
+
+    let saved = false;
+    if (waitChanged) {
+      reportWait({ spotId: selectedId, minutes: waitChoice! });
+      saved = true;
+    }
+    if (status) {
+      submitReport({ spotId: selectedId, status, note });
+      saved = true;
+    }
+    if (!saved) return;
+    setToast({ status, venue: selectedSpot.name });
     setTimeout(() => setToast(null), 2600);
-    closeReport();
+    resetDraft();
   };
 
   if (!connected) {
@@ -196,6 +204,11 @@ function App() {
   }
 
   const selLatest = selectedReports[0];
+  const curWait = selectedId != null ? waitBySpot.get(selectedId) : undefined;
+  const curWaitMin = curWait?.minutes ?? null;
+  const waitChanged = waitChoice !== null && waitChoice !== curWaitMin;
+  const canSave =
+    choice !== null || waitChanged || (note.trim() !== '' && selLatest != null);
   const reportPanel = selectedSpot ? (
     <ReportPanel
       spot={selectedSpot}
@@ -205,19 +218,15 @@ function App() {
       heat={selectedId != null ? heatBySpot.get(selectedId) ?? 0 : 0}
       confirms={selLatest ? confirmsByReport.get(selLatest.id) ?? 0 : 0}
       onConfirm={() => selLatest && confirmReport({ reportId: selLatest.id })}
-      wait={
-        waitDraft && waitDraft.spotId === selectedId
-          ? { minutes: waitDraft.minutes, ageMs: 0 }
-          : selectedId != null
-            ? waitBySpot.get(selectedId)
-            : undefined
-      }
-      onWait={onWaitReport}
+      currentWait={curWait}
+      waitMinutes={waitChoice ?? curWaitMin}
+      onPickWait={setWaitChoice}
       choice={choice}
-      setChoice={setChoice}
+      onToggleVibe={toggleChoice}
       note={note}
       setNote={setNote}
-      onDrop={dropVibe}
+      canSave={canSave}
+      onSave={onSave}
       onClose={closeReport}
     />
   ) : null;
@@ -397,6 +406,14 @@ function TapPrompt() {
 
 const WAIT_OPTIONS = [0, 5, 15, 30, 45, 60];
 
+const eyebrowStyle: CSSProperties = {
+  fontSize: 11,
+  textTransform: 'uppercase',
+  letterSpacing: '0.12em',
+  color: 'var(--fg-3)',
+  fontWeight: 600,
+};
+
 function ReportPanel({
   spot,
   spotReports,
@@ -405,13 +422,15 @@ function ReportPanel({
   heat,
   confirms,
   onConfirm,
-  wait,
-  onWait,
+  currentWait,
+  waitMinutes,
+  onPickWait,
   choice,
-  setChoice,
+  onToggleVibe,
   note,
   setNote,
-  onDrop,
+  canSave,
+  onSave,
   onClose,
 }: {
   spot: Spot;
@@ -421,17 +440,20 @@ function ReportPanel({
   heat: number;
   confirms: number;
   onConfirm: () => void;
-  wait: { minutes: number; ageMs: number } | undefined;
-  onWait: (minutes: number) => void;
+  currentWait: { minutes: number; ageMs: number } | undefined;
+  waitMinutes: number | null;
+  onPickWait: (minutes: number) => void;
   choice: Status | null;
-  setChoice: (s: Status) => void;
+  onToggleVibe: (s: Status) => void;
   note: string;
   setNote: (s: string) => void;
-  onDrop: () => void;
+  canSave: boolean;
+  onSave: () => void;
   onClose: () => void;
 }) {
   const latest = spotReports[0];
   const recentNotes = spotReports.filter(r => r.note).slice(0, 3);
+  const noteNeedsVibe = note.trim() !== '' && !choice && !latest;
   return (
     <div className="flex flex-col" style={{ gap: 18 }}>
       {/* header */}
@@ -504,64 +526,6 @@ function ReportPanel({
         <HeatMeter score={heat} />
       </div>
 
-      {/* F9 — wait time */}
-      <div className="flex flex-col" style={{ gap: 8 }}>
-        <div className="flex items-center justify-between">
-          <span
-            style={{
-              fontSize: 11,
-              textTransform: 'uppercase',
-              letterSpacing: '0.12em',
-              color: 'var(--fg-3)',
-              fontWeight: 600,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 5,
-            }}
-          >
-            <Clock size={12} /> Wait time
-          </span>
-          {wait ? (
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--fg-1)' }}>
-              ~{wait.minutes} min{' '}
-              <span style={{ color: 'var(--fg-3)' }}>· {formatAge(wait.ageMs)} ago</span>
-            </span>
-          ) : (
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--fg-3)' }}>
-              none reported
-            </span>
-          )}
-        </div>
-        <div className="no-scrollbar" style={{ display: 'flex', gap: 6, overflowX: 'auto' }}>
-          {WAIT_OPTIONS.map(m => {
-            const active = !!wait && wait.minutes === m;
-            return (
-              <button
-                key={m}
-                type="button"
-                className="press"
-                onClick={() => onWait(m)}
-                style={{
-                  flexShrink: 0,
-                  height: 34,
-                  padding: '0 13px',
-                  borderRadius: 'var(--radius-pill)',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 13,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  background: active ? 'rgba(45,230,200,0.14)' : 'var(--ink-600)',
-                  border: `1px solid ${active ? 'var(--line-pulse)' : 'var(--line-1)'}`,
-                  color: active ? 'var(--pulse)' : 'var(--fg-2)',
-                }}
-              >
-                {m === 0 ? 'None' : m === 60 ? '60+' : `${m}m`}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
       {/* recent notes (plural) */}
       {recentNotes.length > 0 && (
         <div className="flex flex-col" style={{ gap: 8 }}>
@@ -601,42 +565,95 @@ function ReportPanel({
         </div>
       )}
 
-      {/* prompt */}
-      <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--fg-1)' }}>How's it right now?</span>
+      {/* ---- adjust any of these (all optional), then Save ---- */}
+      <div style={{ height: 1, background: 'var(--line-1)', margin: '2px 0' }} />
 
-      {/* four big buttons */}
-      <div className="grid grid-cols-2 gap-2.5">
-        {STATUSES.map(s => (
-          <StatusButton key={s} status={s} selected={choice === s} onClick={() => setChoice(s)} />
-        ))}
+      {/* vibe (optional) */}
+      <div className="flex flex-col" style={{ gap: 8 }}>
+        <span style={eyebrowStyle}>Vibe</span>
+        <div className="grid grid-cols-2 gap-2.5">
+          {STATUSES.map(s => (
+            <StatusButton key={s} status={s} selected={choice === s} onClick={() => onToggleVibe(s)} />
+          ))}
+        </div>
       </div>
 
-      {/* note */}
-      <textarea
-        value={note}
-        maxLength={140}
-        rows={2}
-        onChange={e => setNote(e.target.value)}
-        placeholder="Add a note… (optional)"
-        className="pulse-input"
-        style={{
-          resize: 'none',
-          width: '100%',
-          padding: '10px 12px',
-          borderRadius: 'var(--radius-md)',
-          background: 'var(--ink-600)',
-          border: '1px solid var(--line-1)',
-          color: 'var(--fg-1)',
-          fontSize: 14,
-          fontFamily: 'var(--font-sans)',
-          outline: 'none',
-        }}
-      />
+      {/* note (optional) */}
+      <div className="flex flex-col" style={{ gap: 8 }}>
+        <span style={eyebrowStyle}>Note</span>
+        <textarea
+          value={note}
+          maxLength={140}
+          rows={2}
+          onChange={e => setNote(e.target.value)}
+          placeholder="Add a note…"
+          className="pulse-input"
+          style={{
+            resize: 'none',
+            width: '100%',
+            padding: '10px 12px',
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--ink-600)',
+            border: '1px solid var(--line-1)',
+            color: 'var(--fg-1)',
+            fontSize: 14,
+            fontFamily: 'var(--font-sans)',
+            outline: 'none',
+          }}
+        />
+      </div>
 
-      {/* CTA */}
-      <PulseButton disabled={!choice} onClick={onDrop}>
-        {choice ? 'Drop the vibe' : 'Pick a vibe'}
+      {/* wait (optional) */}
+      <div className="flex flex-col" style={{ gap: 8 }}>
+        <div className="flex items-center justify-between">
+          <span style={{ ...eyebrowStyle, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <Clock size={12} /> Wait time
+          </span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--fg-3)' }}>
+            {currentWait
+              ? `now ~${currentWait.minutes} min · ${formatAge(currentWait.ageMs)} ago`
+              : 'none yet'}
+          </span>
+        </div>
+        <div className="no-scrollbar" style={{ display: 'flex', gap: 6, overflowX: 'auto' }}>
+          {WAIT_OPTIONS.map(m => {
+            const active = waitMinutes === m;
+            return (
+              <button
+                key={m}
+                type="button"
+                className="press"
+                onClick={() => onPickWait(m)}
+                style={{
+                  flexShrink: 0,
+                  height: 34,
+                  padding: '0 13px',
+                  borderRadius: 'var(--radius-pill)',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  background: active ? 'rgba(45,230,200,0.14)' : 'var(--ink-600)',
+                  border: `1px solid ${active ? 'var(--line-pulse)' : 'var(--line-1)'}`,
+                  color: active ? 'var(--pulse)' : 'var(--fg-2)',
+                }}
+              >
+                {m === 0 ? 'None' : m === 60 ? '60+' : `${m}m`}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* save */}
+      <PulseButton disabled={!canSave} onClick={onSave}>
+        Save
       </PulseButton>
+      {noteNeedsVibe && (
+        <span style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: -10 }}>
+          Pick a vibe to post this spot's first note.
+        </span>
+      )}
     </div>
   );
 }

@@ -709,7 +709,7 @@ export function Toast({
           WebkitBackdropFilter: 'blur(var(--blur-sheet))',
         }}
       >
-        <span style={{ fontSize: 14, color: 'var(--fg-1)', fontWeight: 600 }}>Vibe dropped.</span>
+        <span style={{ fontSize: 14, color: 'var(--fg-1)', fontWeight: 600 }}>Saved.</span>
         {status && <StatusTag status={status} size="sm" />}
         <span
           style={{
