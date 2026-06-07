@@ -74,8 +74,8 @@ function PinMarker({
   const color = hasData ? scoreToColor(score) : NO_DATA_COLOR;
   const rgb = hasData ? scoreToRgb(score) : NO_DATA_RGB;
   const vis = pinVisual(rgb, conf, hasData);
-  const hot = hasData && conf >= 0.85; // lots of fresh reports → emit ring
-  const opacity = hasData ? 0.8 + 0.2 * conf : 0.95; // keep pins bold + solid
+  const hot = false; // dots are a consistent size — no busy/quiet size change or ring
+  const opacity = hasData ? 0.92 : 0.85; // color conveys busyness, not size
   // one-shot ripple when a brand-new report lands
   const burstKey = latest && now - tsToMs(latest.createdAt) <= BURST_MS ? latest.id.toString() : '';
   const colorKey = Math.round(score); // regenerate as the shade shifts

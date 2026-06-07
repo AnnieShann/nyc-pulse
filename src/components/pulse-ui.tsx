@@ -24,7 +24,7 @@ function meta(s: TagStatus) {
   return STATUS_META[s];
 }
 
-/* Wordmark — Inter Black, "NYC" off-white + "Pulse" glowing cyan. */
+/* Wordmark — the app name "Dionysus". */
 export function Wordmark({ size = 18 }: { size?: number }) {
   return (
     <span
@@ -32,12 +32,12 @@ export function Wordmark({ size = 18 }: { size?: number }) {
         fontWeight: 800,
         fontSize: size,
         letterSpacing: '-0.02em',
-        color: 'var(--fg-1)',
+        color: 'var(--pulse)',
+        textShadow: '0 0 14px var(--pulse-glow)',
         lineHeight: 1.05,
       }}
     >
-      NYC{' '}
-      <span style={{ color: 'var(--pulse)', textShadow: '0 0 12px var(--pulse-glow)' }}>Pulse</span>
+      Dionysus
     </span>
   );
 }

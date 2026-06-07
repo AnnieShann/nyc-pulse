@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { tables, reducers } from './module_bindings';
 import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/react';
-import { Bookmark, Camera, Clock, Star, Video, X } from 'lucide-react';
+import { Camera, Check, Clock, Heart, Plus, Star, Video, X } from 'lucide-react';
 import type { Report, Spot } from './module_bindings/types';
 import MapView from './MapView';
 import BottomSheet from './components/BottomSheet';
@@ -115,6 +115,7 @@ function App() {
   const [openPastId, setOpenPastId] = useState<string | null>(null);
   const [openMemberId, setOpenMemberId] = useState<string | null>(null);
   const [activeStopIndex, setActiveStopIndex] = useState(0);
+  const [followedMembers, setFollowedMembers] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<{ label: string; status: Status | null; venue: string } | null>(
     null
   );
@@ -156,8 +157,14 @@ function App() {
       return next;
     });
   const visibleSpots = useMemo(
-    () => spots.filter(s => !hiddenCats.has(s.category)),
-    [spots, hiddenCats]
+    () =>
+      spots.filter(
+        s =>
+          !hiddenCats.has(s.category) &&
+          // Locals skip the tourist landmarks.
+          !(touristMode === 'local' && s.category.toLowerCase() === 'landmark')
+      ),
+    [spots, hiddenCats, touristMode]
   );
 
   // Search across ALL spots (ignores category filter) with status/wait/heat.
@@ -507,15 +514,20 @@ function App() {
         const idx = currentTripData.spotIds.findIndex(id => id === selectedId);
         if (idx >= 0) setActiveStopIndex(idx);
       }}
-      isInTrip={selectedId != null && myTripSpotIds.has(selectedId)}
-      onAddToTrip={() => {
-        if (selectedId != null) addToTrip({ spotId: selectedId });
-        flashToast({ label: 'Added to trip.', status: null, venue: selectedSpot.name });
-      }}
     />
   ) : null;
 
   const selInfo = selectedSpot ? placeInfoFor(selectedSpot.name) : null;
+  // Which of my wishlists contain the selected spot (+ the item id, for removal).
+  const selWishlistItemByList = new Map<bigint, bigint>();
+  if (selectedId != null) {
+    for (const it of wishlistItems) {
+      if (it.spotId === selectedId && it.owner.toHexString() === myHex) {
+        selWishlistItemByList.set(it.wishlistId, it.id);
+      }
+    }
+  }
+  const selInWishlists = new Set(selWishlistItemByList.keys());
 
   return (
     <div className="relative h-[100dvh] w-full overflow-hidden" style={{ background: 'var(--ink-900)' }}>
@@ -594,8 +606,18 @@ function App() {
                 <SpotPeek
                   spot={selectedSpot}
                   info={selInfo ?? {}}
-                  isSaved={mySavedIds.has(selectedSpot.id)}
-                  onToggleSave={() => toggleSaved({ spotId: selectedSpot.id })}
+                  wishlists={myWishlists}
+                  inWishlists={selInWishlists}
+                  onToggleWishlist={wid => {
+                    const itemId = selWishlistItemByList.get(wid);
+                    if (itemId != null) removeWishlistItem({ itemId });
+                    else if (selectedId != null) addToWishlist({ wishlistId: wid, spotId: selectedId });
+                  }}
+                  isInTrip={selectedId != null && myTripSpotIds.has(selectedId)}
+                  onAddToTrip={() => {
+                    if (selectedId != null) addToTrip({ spotId: selectedId });
+                    flashToast({ label: 'Added to itinerary.', status: null, venue: selectedSpot.name });
+                  }}
                   onClose={closeReport}
                 />
               }
@@ -631,7 +653,19 @@ function App() {
 
       {view === 'itinerary' &&
         (openMemberId && MEMBERS[openMemberId] ? (
-          <MemberProfile member={MEMBERS[openMemberId]} onBack={() => setOpenMemberId(null)} />
+          <MemberProfile
+            member={MEMBERS[openMemberId]}
+            isFollowing={followedMembers.has(openMemberId)}
+            onToggleFollow={() =>
+              setFollowedMembers(prev => {
+                const next = new Set(prev);
+                if (next.has(openMemberId)) next.delete(openMemberId);
+                else next.add(openMemberId);
+                return next;
+              })
+            }
+            onBack={() => setOpenMemberId(null)}
+          />
         ) : openPastItinerary ? (
           <PastItineraryDetail
             itinerary={openPastItinerary}
@@ -666,6 +700,8 @@ function App() {
           handle={myHandle ?? 'you'}
           avatar={myProfile?.avatar ?? ''}
           neighborhood="New York"
+          vibes={reports.filter(r => r.reporter.toHexString() === myHex).length}
+          following={followedMembers.size}
           activity={myActivity}
           onEdit={() => setEditProfile(true)}
         />
@@ -763,8 +799,6 @@ function ReportPanel({
   onClose,
   hideHeader,
   onCheckIn,
-  onAddToTrip,
-  isInTrip,
 }: {
   spot: Spot;
   info: PlaceInfo;
@@ -787,11 +821,8 @@ function ReportPanel({
   onClose: () => void;
   hideHeader?: boolean;
   onCheckIn?: () => void;
-  onAddToTrip?: () => void;
-  isInTrip?: boolean;
 }) {
   const [showWait, setShowWait] = useState(false);
-  const [composerTab, setComposerTab] = useState<'now' | 'trip'>('now');
   return (
     <div className="flex flex-col" style={{ gap: 18 }}>
       {!hideHeader && (
@@ -928,162 +959,120 @@ function ReportPanel({
         </div>
       )}
 
-      {/* Now / Add to Trip tabs */}
-      <div className="flex" style={{ gap: 24, borderBottom: '1px solid var(--line-1)' }}>
-        {(['now', 'trip'] as const).map(tk => {
-          const on = composerTab === tk;
+      {/* report current status */}
+      <div
+        style={{
+          fontSize: 15,
+          fontWeight: 700,
+          color: 'var(--fg-1)',
+          paddingBottom: 10,
+          borderBottom: '1px solid var(--line-1)',
+        }}
+      >
+        Report current status
+      </div>
+
+      {/* vibe picker */}
+      <div className="grid grid-cols-4 gap-2">
+        {STATUSES.map(s => {
+          const meta = STATUS_META[s];
+          const on = choice === s;
           return (
             <button
-              key={tk}
+              key={s}
               type="button"
-              onClick={() => setComposerTab(tk)}
+              className="press"
+              onClick={() => onToggleVibe(s)}
               style={{
-                background: 'none',
-                border: 'none',
-                padding: '0 0 10px',
+                height: 36,
+                borderRadius: 'var(--radius-pill)',
+                fontSize: 12.5,
+                fontWeight: 700,
                 cursor: 'pointer',
-                fontSize: 15,
-                fontWeight: on ? 700 : 500,
-                color: on ? 'var(--fg-1)' : 'var(--fg-3)',
-                borderBottom: `2px solid ${on ? 'var(--fg-1)' : 'transparent'}`,
-                marginBottom: -1,
+                background: on ? meta.color : meta.tint,
+                border: `1px solid ${on ? meta.color : 'transparent'}`,
+                color: on ? 'var(--fg-on-accent)' : meta.color,
               }}
             >
-              {tk === 'now' ? 'Now' : 'Add to Trip'}
+              {meta.label}
             </button>
           );
         })}
       </div>
 
-      {composerTab === 'now' ? (
-        <>
-          {/* vibe picker */}
-          <div className="grid grid-cols-4 gap-2">
-            {STATUSES.map(s => {
-              const meta = STATUS_META[s];
-              const on = choice === s;
-              return (
-                <button
-                  key={s}
-                  type="button"
-                  className="press"
-                  onClick={() => onToggleVibe(s)}
-                  style={{
-                    height: 36,
-                    borderRadius: 'var(--radius-pill)',
-                    fontSize: 12.5,
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    background: on ? meta.color : meta.tint,
-                    border: `1px solid ${on ? meta.color : 'transparent'}`,
-                    color: on ? 'var(--fg-on-accent)' : meta.color,
-                  }}
-                >
-                  {meta.label}
-                </button>
-              );
-            })}
-          </div>
+      {/* share the vibe input + Post */}
+      <div
+        className="flex items-center"
+        style={{
+          gap: 8,
+          height: 48,
+          padding: '0 6px 0 16px',
+          borderRadius: 'var(--radius-pill)',
+          background: 'var(--ink-600)',
+          border: '1px solid var(--line-1)',
+        }}
+      >
+        <input
+          value={note}
+          maxLength={140}
+          onChange={e => setNote(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && canSave) onSave();
+          }}
+          placeholder="Share the vibe right now…"
+          style={{
+            flex: 1,
+            minWidth: 0,
+            background: 'transparent',
+            border: 'none',
+            outline: 'none',
+            fontSize: 14,
+            color: 'var(--fg-1)',
+            fontFamily: 'var(--font-sans)',
+          }}
+        />
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={!canSave}
+          className="press"
+          style={{
+            height: 36,
+            padding: '0 18px',
+            borderRadius: 'var(--radius-pill)',
+            border: 'none',
+            fontSize: 14,
+            fontWeight: 700,
+            cursor: canSave ? 'pointer' : 'default',
+            background: canSave ? 'var(--accent-ink)' : 'var(--ink-400)',
+            color: '#fff',
+          }}
+        >
+          Post
+        </button>
+      </div>
 
-          {/* share the vibe input + Post */}
-          <div
-            className="flex items-center"
-            style={{
-              gap: 8,
-              height: 48,
-              padding: '0 6px 0 16px',
-              borderRadius: 'var(--radius-pill)',
-              background: 'var(--ink-600)',
-              border: '1px solid var(--line-1)',
-            }}
-          >
-            <input
-              value={note}
-              maxLength={140}
-              onChange={e => setNote(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && canSave) onSave();
-              }}
-              placeholder="Share the vibe right now…"
-              style={{
-                flex: 1,
-                minWidth: 0,
-                background: 'transparent',
-                border: 'none',
-                outline: 'none',
-                fontSize: 14,
-                color: 'var(--fg-1)',
-                fontFamily: 'var(--font-sans)',
-              }}
-            />
-            <button
-              type="button"
-              onClick={onSave}
-              disabled={!canSave}
-              className="press"
-              style={{
-                height: 36,
-                padding: '0 18px',
-                borderRadius: 'var(--radius-pill)',
-                border: 'none',
-                fontSize: 14,
-                fontWeight: 700,
-                cursor: canSave ? 'pointer' : 'default',
-                background: canSave ? 'var(--accent-ink)' : 'var(--ink-400)',
-                color: '#fff',
-              }}
-            >
-              Post
-            </button>
-          </div>
+      {/* photo / video */}
+      <div className="grid grid-cols-2 gap-2.5">
+        <button type="button" className="press" onClick={onOpenCamera} style={photoVideoBtn}>
+          <Camera size={16} /> Photo
+        </button>
+        <button type="button" className="press" style={photoVideoBtn}>
+          <Video size={16} /> Video
+        </button>
+      </div>
+      <span style={{ fontSize: 12, color: 'var(--fg-3)', textAlign: 'center', marginTop: -4 }}>
+        Disappears after 24 hours
+      </span>
 
-          {/* photo / video */}
-          <div className="grid grid-cols-2 gap-2.5">
-            <button type="button" className="press" onClick={onOpenCamera} style={photoVideoBtn}>
-              <Camera size={16} /> Photo
-            </button>
-            <button type="button" className="press" style={photoVideoBtn}>
-              <Video size={16} /> Video
-            </button>
-          </div>
-          <span style={{ fontSize: 12, color: 'var(--fg-3)', textAlign: 'center', marginTop: -4 }}>
-            Disappears after 24 hours
-          </span>
-
-          {/* recent reports */}
-          <History
-            reports={windowReports}
-            now={now}
-            resolveHandle={resolveHandle}
-            confirmFor={confirmFor}
-            onConfirm={onConfirm}
-          />
-        </>
-      ) : (
-        <div className="flex flex-col" style={{ gap: 12 }}>
-          <p style={{ margin: 0, fontSize: 14, color: 'var(--fg-2)', lineHeight: 1.5 }}>
-            Add {spot.name} to your current trip itinerary.
-          </p>
-          <button
-            type="button"
-            className="press"
-            onClick={onAddToTrip}
-            disabled={isInTrip}
-            style={{
-              height: 52,
-              borderRadius: 'var(--radius-lg)',
-              border: '1px solid transparent',
-              background: isInTrip ? 'var(--pulse-tint)' : 'var(--accent-ink)',
-              color: isInTrip ? 'var(--pulse)' : 'var(--fg-on-accent)',
-              fontSize: 16,
-              fontWeight: 700,
-              cursor: isInTrip ? 'default' : 'pointer',
-            }}
-          >
-            {isInTrip ? 'Added to trip ✓' : 'Add to your trip'}
-          </button>
-        </div>
-      )}
+      {/* recent reports */}
+      <History
+        reports={windowReports}
+        now={now}
+        resolveHandle={resolveHandle}
+        confirmFor={confirmFor}
+        onConfirm={onConfirm}
+      />
     </div>
   );
 }
@@ -1205,16 +1194,30 @@ function ProfileChip({
 function SpotPeek({
   spot,
   info,
-  isSaved,
-  onToggleSave,
+  wishlists,
+  inWishlists,
+  onToggleWishlist,
+  isInTrip,
+  onAddToTrip,
   onClose,
 }: {
   spot: Spot;
   info: PlaceInfo;
-  isSaved: boolean;
-  onToggleSave: () => void;
+  wishlists: { id: bigint; name: string; color: string }[];
+  inWishlists: Set<bigint>;
+  onToggleWishlist: (wishlistId: bigint) => void;
+  isInTrip: boolean;
+  onAddToTrip: () => void;
   onClose: () => void;
 }) {
+  const [showFolders, setShowFolders] = useState(false);
+  const hearted = inWishlists.size > 0;
+  const circle: React.CSSProperties = {
+    width: 36,
+    height: 36,
+    borderRadius: 999,
+    cursor: 'pointer',
+  };
   return (
     <div className="flex items-start justify-between gap-3 py-0.5">
       <div className="min-w-0">
@@ -1248,36 +1251,118 @@ function SpotPeek({
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
+        {/* heart → wishlist folders popover */}
+        <div style={{ position: 'relative' }}>
+          <button
+            type="button"
+            onClick={() => setShowFolders(v => !v)}
+            aria-label="Save to wishlist"
+            className="press grid place-items-center"
+            style={{
+              ...circle,
+              background: hearted ? 'var(--pulse-tint)' : 'var(--ink-600)',
+              border: `1px solid ${hearted ? 'var(--line-pulse)' : 'var(--line-1)'}`,
+              color: hearted ? 'var(--pulse)' : 'var(--fg-2)',
+            }}
+          >
+            <Heart size={16} strokeWidth={2.2} fill={hearted ? 'var(--pulse)' : 'none'} />
+          </button>
+          {showFolders && (
+            <>
+              <div
+                onClick={() => setShowFolders(false)}
+                style={{ position: 'fixed', inset: 0, zIndex: 2400 }}
+              />
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 44,
+                  right: 0,
+                  zIndex: 2500,
+                  width: 236,
+                  background: 'var(--ink-700)',
+                  border: '1px solid var(--line-2)',
+                  borderRadius: 'var(--radius-lg)',
+                  boxShadow: 'var(--shadow-pop)',
+                  padding: 6,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: 'var(--fg-3)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.08em',
+                    padding: '6px 8px 8px',
+                  }}
+                >
+                  Save to wishlist
+                </div>
+                {wishlists.length === 0 ? (
+                  <div style={{ padding: '4px 8px 8px', fontSize: 13, color: 'var(--fg-3)' }}>
+                    No wishlists yet.
+                  </div>
+                ) : (
+                  wishlists.map(w => {
+                    const inW = inWishlists.has(w.id);
+                    return (
+                      <button
+                        key={w.id.toString()}
+                        type="button"
+                        onClick={() => onToggleWishlist(w.id)}
+                        className="press flex items-center"
+                        style={{
+                          width: '100%',
+                          gap: 10,
+                          padding: '9px 8px',
+                          borderRadius: 'var(--radius-md)',
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                        }}
+                      >
+                        <span style={{ width: 18, height: 18, borderRadius: 999, background: w.color, flexShrink: 0 }} />
+                        <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600, color: 'var(--fg-1)' }}>
+                          {w.name}
+                        </span>
+                        <span style={{ color: inW ? 'var(--pulse)' : 'var(--fg-3)', flexShrink: 0 }}>
+                          {inW ? <Check size={18} /> : <Plus size={18} />}
+                        </span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* plus → add to itinerary */}
         <button
           type="button"
-          onClick={onToggleSave}
-          aria-label={isSaved ? 'Remove from saved' : 'Save to list'}
+          onClick={onAddToTrip}
+          aria-label={isInTrip ? 'In itinerary' : 'Add to itinerary'}
+          title={isInTrip ? 'In your itinerary' : 'Add to itinerary'}
           className="press grid place-items-center"
           style={{
-            width: 36,
-            height: 36,
-            borderRadius: 999,
-            background: isSaved ? 'var(--pulse-tint)' : 'var(--ink-600)',
-            border: `1px solid ${isSaved ? 'var(--line-pulse)' : 'var(--line-1)'}`,
-            color: isSaved ? 'var(--pulse)' : 'var(--fg-2)',
-            cursor: 'pointer',
+            ...circle,
+            background: isInTrip ? 'var(--pulse-tint)' : 'var(--ink-600)',
+            border: `1px solid ${isInTrip ? 'var(--line-pulse)' : 'var(--line-1)'}`,
+            color: isInTrip ? 'var(--pulse)' : 'var(--fg-2)',
           }}
         >
-          <Bookmark size={16} strokeWidth={2.2} fill={isSaved ? 'var(--pulse)' : 'none'} />
+          {isInTrip ? <Check size={16} strokeWidth={2.4} /> : <Plus size={16} strokeWidth={2.4} />}
         </button>
+
+        {/* close */}
         <button
           type="button"
           onClick={onClose}
           aria-label="Close"
           className="grid place-items-center"
-          style={{
-            width: 36,
-            height: 36,
-            borderRadius: 999,
-            background: 'var(--ink-600)',
-            border: '1px solid var(--line-1)',
-            color: 'var(--fg-2)',
-          }}
+          style={{ ...circle, background: 'var(--ink-600)', border: '1px solid var(--line-1)', color: 'var(--fg-2)' }}
         >
           <X size={16} strokeWidth={2.4} />
         </button>

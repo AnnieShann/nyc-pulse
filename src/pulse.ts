@@ -243,23 +243,28 @@ export function confidence(weight: number): number {
   return Math.max(0, Math.min(1, weight / 2.5));
 }
 
-// Per-pin visual params derived from heat (size of dot, halo, glow strength).
+// Per-pin visuals. Dot + halo are a CONSTANT size for every pin — only the color
+// (and a faint glow) varies. (Busyness shows via color, not size.)
+const PIN_CORE = 30; // px — same for all dots
+const PIN_AURA = 64; // px — same soft bloom for all
 export function pinVisual(
   rgb: [number, number, number],
-  heat: number,
+  _heat: number,
   hasData: boolean
 ): { core: number; aura: number; auraOpacity: number; glow: string } {
   const [r, g, b] = rgb;
   if (!hasData) {
-    // quiet spot — still a solid, visible dot with a faint bloom
-    return { core: 22, aura: 44, auraOpacity: 0.16, glow: `0 0 9px 1px rgba(${r},${g},${b},0.34)` };
+    return {
+      core: PIN_CORE,
+      aura: PIN_AURA,
+      auraOpacity: 0.14,
+      glow: `0 0 10px 1px rgba(${r},${g},${b},0.32)`,
+    };
   }
-  const core = Math.round(26 + heat * 16); // 26 -> 42px solid disc
-  const aura = Math.round(60 + heat * 78); // 60 -> 138px soft bloom
-  const auraOpacity = +(0.22 + heat * 0.3).toFixed(3);
-  const blur = Math.round(16 + heat * 28);
-  const spread = Math.round(3 + heat * 8);
-  const alpha = +(0.45 + heat * 0.32).toFixed(2);
-  const glow = `0 0 ${blur}px ${spread}px rgba(${r},${g},${b},${alpha})`;
-  return { core, aura, auraOpacity, glow };
+  return {
+    core: PIN_CORE,
+    aura: PIN_AURA,
+    auraOpacity: 0.26,
+    glow: `0 0 18px 4px rgba(${r},${g},${b},0.5)`,
+  };
 }

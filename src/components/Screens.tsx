@@ -6,9 +6,11 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronUp,
+  Copy,
   GripVertical,
   Loader2,
   Map as MapIcon,
+  MessageSquare,
   Plus,
   Search,
   Settings,
@@ -493,6 +495,7 @@ function CurrentTripCard({
   onReorder: (orderedIds: bigint[]) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
+  const ROW_H = 56; // fixed row height enables smooth transform-based reordering
   const [order, setOrder] = useState(trip.stops);
   const sig = trip.stops.map(s => s.id.toString()).join(',');
   useEffect(() => {
@@ -500,38 +503,35 @@ function CurrentTripCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig]);
 
-  const listRef = useRef<HTMLDivElement | null>(null);
-  const drag = useRef<{ id: bigint } | null>(null);
+  const drag = useRef<{ id: bigint; startY: number; startSlot: number } | null>(null);
   const [dragId, setDragId] = useState<bigint | null>(null);
-
-  const indexFromPointer = (clientY: number) => {
-    const el = listRef.current;
-    if (!el) return 0;
-    const rect = el.getBoundingClientRect();
-    const rowH = (el.firstElementChild?.getBoundingClientRect().height ?? 52) || 52;
-    return Math.max(0, Math.min(order.length - 1, Math.floor((clientY - rect.top) / rowH)));
-  };
+  const [dy, setDy] = useState(0);
 
   const onDown = (id: bigint) => (e: React.PointerEvent) => {
     (e.target as Element).setPointerCapture?.(e.pointerId);
-    drag.current = { id };
+    drag.current = { id, startY: e.clientY, startSlot: order.findIndex(s => s.id === id) };
     setDragId(id);
+    setDy(0);
   };
   const onMove = (e: React.PointerEvent) => {
-    if (!drag.current) return;
-    const id = drag.current.id;
-    const target = indexFromPointer(e.clientY);
-    const cur = order.findIndex(s => s.id === id);
-    if (cur === -1 || cur === target) return;
-    const next = [...order];
-    const [item] = next.splice(cur, 1);
-    next.splice(target, 0, item);
-    setOrder(next);
+    const d = drag.current;
+    if (!d) return;
+    const delta = e.clientY - d.startY;
+    setDy(delta);
+    const targetSlot = Math.max(0, Math.min(order.length - 1, d.startSlot + Math.round(delta / ROW_H)));
+    const cur = order.findIndex(s => s.id === d.id);
+    if (cur !== -1 && cur !== targetSlot) {
+      const next = [...order];
+      const [item] = next.splice(cur, 1);
+      next.splice(targetSlot, 0, item);
+      setOrder(next);
+    }
   };
   const onUp = () => {
     if (!drag.current) return;
     drag.current = null;
     setDragId(null);
+    setDy(0);
     onReorder(order.map(s => s.id));
   };
 
@@ -662,68 +662,79 @@ function CurrentTripCard({
             })}
           </div>
 
-          <div style={{ height: 1, background: 'var(--line-1)', margin: '14px 0 2px' }} />
+          <div style={{ height: 1, background: 'var(--line-1)', margin: '14px 0 6px' }} />
 
-          {/* reorderable / deletable stop list */}
-          <div ref={listRef} style={{ display: 'flex', flexDirection: 'column' }}>
-            {order.map((s, i) => (
-              <div
-                key={s.id.toString()}
-                className="flex items-center"
-                style={{
-                  gap: 10,
-                  padding: '11px 0',
-                  borderTop: i === 0 ? 'none' : '1px solid var(--line-1)',
-                  background: dragId === s.id ? 'var(--ink-600)' : 'transparent',
-                  borderRadius: dragId === s.id ? 'var(--radius-md)' : 0,
-                  touchAction: 'none',
-                }}
-              >
-                <span
-                  onPointerDown={onDown(s.id)}
-                  onPointerMove={onMove}
-                  onPointerUp={onUp}
-                  onPointerCancel={onUp}
-                  className="grid place-items-center shrink-0"
-                  style={{ width: 22, color: 'var(--fg-3)', cursor: 'grab', touchAction: 'none' }}
-                  aria-label="Drag to reorder"
-                >
-                  <GripVertical size={16} />
-                </span>
-                <span
-                  className="grid place-items-center shrink-0"
-                  style={{ width: 26, height: 26, borderRadius: 999, background: 'var(--ink-600)', fontSize: 13, fontWeight: 700, color: 'var(--fg-1)' }}
-                >
-                  {i + 1}
-                </span>
-                <span
+          {/* reorderable (smooth drag) / deletable stop list */}
+          <div style={{ position: 'relative', height: order.length * ROW_H }}>
+            {order.map((s, slot) => {
+              const dragging = dragId === s.id;
+              const translate = dragging ? drag.current!.startSlot * ROW_H + dy : slot * ROW_H;
+              return (
+                <div
+                  key={s.id.toString()}
+                  className="flex items-center"
                   style={{
-                    flex: 1,
-                    minWidth: 0,
-                    fontSize: 15,
-                    fontWeight: 600,
-                    color: 'var(--fg-1)',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    height: ROW_H,
+                    gap: 10,
+                    padding: '0 2px',
+                    transform: `translateY(${translate}px)`,
+                    transition: dragging ? 'none' : 'transform 180ms var(--ease-out)',
+                    zIndex: dragging ? 5 : 1,
+                    background: dragging ? 'var(--ink-700)' : 'transparent',
+                    borderRadius: dragging ? 'var(--radius-md)' : 0,
+                    boxShadow: dragging ? 'var(--shadow-pop)' : 'none',
+                    touchAction: 'none',
                   }}
                 >
-                  {s.name}
-                </span>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--fg-2)', flexShrink: 0 }}>
-                  {suggestedTime(i)}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => onRemoveStop(s.id)}
-                  aria-label="Remove stop"
-                  className="press grid place-items-center shrink-0"
-                  style={{ width: 28, height: 28, borderRadius: 999, background: 'none', border: 'none', color: 'var(--fg-3)', cursor: 'pointer' }}
-                >
-                  <X size={16} />
-                </button>
-              </div>
-            ))}
+                  <span
+                    onPointerDown={onDown(s.id)}
+                    onPointerMove={onMove}
+                    onPointerUp={onUp}
+                    onPointerCancel={onUp}
+                    className="grid place-items-center shrink-0"
+                    style={{ width: 24, height: ROW_H, color: 'var(--fg-3)', cursor: 'grab', touchAction: 'none' }}
+                    aria-label="Drag to reorder"
+                  >
+                    <GripVertical size={16} />
+                  </span>
+                  <span
+                    className="grid place-items-center shrink-0"
+                    style={{ width: 26, height: 26, borderRadius: 999, background: 'var(--ink-600)', fontSize: 13, fontWeight: 700, color: 'var(--fg-1)' }}
+                  >
+                    {slot + 1}
+                  </span>
+                  <span
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      fontSize: 15,
+                      fontWeight: 600,
+                      color: 'var(--fg-1)',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {s.name}
+                  </span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--fg-2)', flexShrink: 0 }}>
+                    {suggestedTime(slot)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onRemoveStop(s.id)}
+                    aria-label="Remove stop"
+                    className="press grid place-items-center shrink-0"
+                    style={{ width: 28, height: 28, borderRadius: 999, background: 'none', border: 'none', color: 'var(--fg-3)', cursor: 'pointer' }}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </>
       )}
@@ -981,7 +992,17 @@ export function PastItineraryDetail({
 }
 
 /* A collaborator's (read-only) profile — the multiplayer touch. */
-export function MemberProfile({ member, onBack }: { member: Member; onBack: () => void }) {
+export function MemberProfile({
+  member,
+  isFollowing,
+  onToggleFollow,
+  onBack,
+}: {
+  member: Member;
+  isFollowing: boolean;
+  onToggleFollow: () => void;
+  onBack: () => void;
+}) {
   return (
     <div
       className="h-full w-full overflow-y-auto"
@@ -1032,7 +1053,7 @@ export function MemberProfile({ member, onBack }: { member: Member; onBack: () =
         <div style={{ width: 1, background: 'var(--line-1)' }} />
         <div style={{ ...statCol, flex: 1 }}>
           <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--fg-1)' }}>
-            {member.followers.toLocaleString()}
+            {(member.followers + (isFollowing ? 1 : 0)).toLocaleString()}
           </span>
           <span style={{ fontSize: 12, color: 'var(--fg-2)' }}>Followers</span>
         </div>
@@ -1041,20 +1062,31 @@ export function MemberProfile({ member, onBack }: { member: Member; onBack: () =
       <button
         type="button"
         className="press"
+        onClick={onToggleFollow}
         style={{
           marginTop: 16,
           width: '100%',
           height: 46,
           borderRadius: 'var(--radius-lg)',
-          border: 'none',
-          background: 'var(--accent-ink)',
-          color: 'var(--fg-on-accent)',
+          border: `1px solid ${isFollowing ? 'var(--line-2)' : 'transparent'}`,
+          background: isFollowing ? 'var(--ink-700)' : 'var(--accent-ink)',
+          color: isFollowing ? 'var(--fg-1)' : 'var(--fg-on-accent)',
           fontSize: 15,
           fontWeight: 700,
           cursor: 'pointer',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 6,
         }}
       >
-        Follow
+        {isFollowing ? (
+          <>
+            <Check size={16} /> Following
+          </>
+        ) : (
+          'Follow'
+        )}
       </button>
     </div>
   );
@@ -1212,6 +1244,48 @@ export function WishlistDetail({
 
 const statCol: CSSProperties = { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 };
 
+const profileActionBtn: CSSProperties = {
+  height: 48,
+  borderRadius: 'var(--radius-lg)',
+  border: '1px solid var(--line-2)',
+  background: 'var(--ink-700)',
+  color: 'var(--fg-1)',
+  fontSize: 15,
+  fontWeight: 700,
+  cursor: 'pointer',
+  boxShadow: 'var(--shadow-card)',
+};
+const shareBtnDark: CSSProperties = {
+  width: '100%',
+  height: 48,
+  borderRadius: 'var(--radius-lg)',
+  border: 'none',
+  background: 'var(--accent-ink)',
+  color: 'var(--fg-on-accent)',
+  fontSize: 15,
+  fontWeight: 700,
+  cursor: 'pointer',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 8,
+};
+const shareBtnOutline: CSSProperties = {
+  width: '100%',
+  height: 48,
+  borderRadius: 'var(--radius-lg)',
+  border: '1px solid var(--line-2)',
+  background: 'var(--ink-700)',
+  color: 'var(--fg-1)',
+  fontSize: 15,
+  fontWeight: 700,
+  cursor: 'pointer',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 8,
+};
+
 export type ActivityItem = { id: string; spotName: string; note: string; ageMs: number; status: Status };
 
 /* Profile tab — minimal: avatar, handle, neighborhood, Following/Followers (no Posts). */
@@ -1219,15 +1293,33 @@ export function ProfileScreen({
   handle,
   avatar,
   neighborhood,
+  vibes,
+  following,
   activity,
   onEdit,
 }: {
   handle: string;
   avatar: string;
   neighborhood: string;
+  vibes: number;
+  following: number;
   activity: ActivityItem[];
   onEdit: () => void;
 }) {
+  const [showShare, setShowShare] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const link =
+    (typeof window !== 'undefined' ? window.location.origin : 'https://nyc-pulse-two.vercel.app') +
+    `/u/${handle}`;
+  const copyLink = () => {
+    navigator.clipboard?.writeText(link).then(
+      () => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1600);
+      },
+      () => {}
+    );
+  };
   return (
     <div
       className="h-full w-full overflow-y-auto"
@@ -1296,7 +1388,12 @@ export function ProfileScreen({
         }}
       >
         <div style={{ ...statCol, flex: 1 }}>
-          <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--fg-1)' }}>0</span>
+          <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--fg-1)' }}>{vibes}</span>
+          <span style={{ fontSize: 12, color: 'var(--fg-2)' }}>Vibes</span>
+        </div>
+        <div style={{ width: 1, background: 'var(--line-1)' }} />
+        <div style={{ ...statCol, flex: 1 }}>
+          <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--fg-1)' }}>{following}</span>
           <span style={{ fontSize: 12, color: 'var(--fg-2)' }}>Following</span>
         </div>
         <div style={{ width: 1, background: 'var(--line-1)' }} />
@@ -1305,6 +1402,98 @@ export function ProfileScreen({
           <span style={{ fontSize: 12, color: 'var(--fg-2)' }}>Followers</span>
         </div>
       </div>
+
+      {/* edit / share profile */}
+      <div className="grid grid-cols-2 gap-2.5" style={{ marginTop: 12 }}>
+        <button type="button" className="press" onClick={onEdit} style={profileActionBtn}>
+          Edit Profile
+        </button>
+        <button type="button" className="press" onClick={() => setShowShare(true)} style={profileActionBtn}>
+          Share Profile
+        </button>
+      </div>
+
+      {showShare && (
+        <div
+          onClick={() => setShowShare(false)}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 2600,
+            background: 'var(--glass-scrim)',
+            backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: 360,
+              background: 'var(--ink-700)',
+              borderRadius: 'var(--radius-xl)',
+              border: '1px solid var(--line-2)',
+              boxShadow: 'var(--shadow-pop)',
+              padding: 20,
+            }}
+          >
+            <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
+              <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--fg-1)' }}>Share profile</span>
+              <button
+                type="button"
+                onClick={() => setShowShare(false)}
+                aria-label="Close"
+                className="grid place-items-center"
+                style={{ width: 32, height: 32, borderRadius: 999, background: 'var(--ink-600)', border: 'none', color: 'var(--fg-2)', cursor: 'pointer' }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div
+              className="flex items-center"
+              style={{
+                gap: 8,
+                padding: '10px 12px',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--ink-600)',
+                border: '1px solid var(--line-1)',
+                marginBottom: 12,
+              }}
+            >
+              <span
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  fontSize: 13,
+                  color: 'var(--fg-2)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {link}
+              </span>
+            </div>
+
+            <button type="button" className="press" onClick={copyLink} style={shareBtnDark}>
+              {copied ? <Check size={16} /> : <Copy size={16} />}
+              {copied ? 'Copied!' : 'Copy link'}
+            </button>
+            <a
+              href={`sms:&body=${encodeURIComponent(`Check out my Dionysus profile: ${link}`)}`}
+              className="press"
+              style={{ ...shareBtnOutline, marginTop: 10, textDecoration: 'none' }}
+            >
+              <MessageSquare size={16} /> Share to Messages
+            </a>
+          </div>
+        </div>
+      )}
 
       <div style={{ marginTop: 20 }}>
         <span
@@ -1340,8 +1529,8 @@ export function ProfileScreen({
                     style={{
                       fontSize: 12,
                       fontWeight: 700,
-                      color: STATUS_META[a.status].color,
-                      background: STATUS_META[a.status].tint,
+                      color: STATUS_META.packed.color,
+                      background: STATUS_META.packed.tint,
                       borderRadius: 'var(--radius-pill)',
                       padding: '2px 9px',
                     }}
