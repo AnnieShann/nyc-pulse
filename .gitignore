@@ -13,6 +13,6 @@ tsconfig.tsbuildinfo
 # Vercel
 .vercel
 
-# Local secrets — never commit (use for ANTHROPIC_API_KEY in vercel dev)
+# Local secrets — never commit (use for OPENROUTER_API_KEY in vercel dev)
 .env
 .vercel

@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// Anthropic Claude — fast/cheap model for intent parsing. Swap if you like.
-const MODEL = 'claude-haiku-4-5-20251001';
+// Free OpenRouter model — its id ends in ":free". Swap this to the exact id you want.
+const MODEL = 'meta-llama/llama-3.3-70b-instruct:free';
 
 const SYSTEM =
   "Convert the user's freeform request for places into structured filters. " +
@@ -32,7 +32,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  const key = process.env.ANTHROPIC_API_KEY;
+  const key = process.env.OPENROUTER_API_KEY;
   const body = typeof req.body === 'string' ? safeJson(req.body) : req.body;
   const query = String(body?.query ?? '').slice(0, 500).trim();
 
@@ -45,33 +45,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 9000);
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
+    const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'x-api-key': key,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://nyc-pulse-two.vercel.app',
+        'X-Title': 'NYC Pulse',
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 200,
         temperature: 0.1,
-        system: SYSTEM,
-        messages: [{ role: 'user', content: query }],
+        max_tokens: 200,
+        messages: [
+          { role: 'system', content: SYSTEM },
+          { role: 'user', content: query },
+        ],
       }),
       signal: ctrl.signal,
     });
     clearTimeout(timer);
 
     if (!r.ok) {
-      res.status(200).json({ filters: EMPTY, source: 'fallback', error: `anthropic ${r.status}` });
+      res.status(200).json({ filters: EMPTY, source: 'fallback', error: `openrouter ${r.status}` });
       return;
     }
     const data = await r.json();
-    // Messages API: { content: [{ type: 'text', text: '...' }] }
-    const content: string = Array.isArray(data?.content)
-      ? data.content.map((b: any) => (typeof b?.text === 'string' ? b.text : '')).join('')
-      : '';
+    const content: string = data?.choices?.[0]?.message?.content ?? '';
     const filters = parseFilters(content) ?? EMPTY;
     res.status(200).json({ filters, source: 'llm' });
   } catch (e) {
