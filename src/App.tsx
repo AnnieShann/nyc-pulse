@@ -50,6 +50,7 @@ import {
   type Ranked,
 } from './lib/recommend';
 import { placeInfoFor, type PlaceInfo } from './placeInfo';
+import { venuePhotoFor } from './lib/venuePhoto';
 import type { Photo } from './module_bindings/types';
 import {
   STATUSES,
@@ -473,7 +474,8 @@ function App() {
         color: r.busyness != null ? scoreToColor(r.busyness) : NO_DATA_COLOR,
         distance: distanceLabel(r.distanceMeters),
         waitMinutes: r.waitMinutes,
-        thumb: photoMap.get(r.id)?.[0]?.data ?? null,
+        // a live user photo if one exists, else a reliable category stock photo
+        thumb: photoMap.get(r.id)?.[0]?.data ?? venuePhotoFor(r.name, r.category),
       })),
     [recs, photoMap]
   );
