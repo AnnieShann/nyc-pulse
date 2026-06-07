@@ -663,7 +663,7 @@ function App() {
       <div className="grid h-[100dvh] place-items-center" style={{ background: 'var(--ink-900)' }}>
         <div className="flex flex-col items-center gap-3">
           <Wordmark size={34} />
-          <p className="breathe" style={{ fontSize: 14, color: 'var(--fg-3)' }}>
+          <p className="breathe" style={{ fontSize: 14, color: 'var(--pulse)', fontWeight: 600 }}>
             tuning into the city…
           </p>
         </div>
