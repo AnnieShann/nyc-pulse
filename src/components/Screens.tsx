@@ -1630,11 +1630,13 @@ const shareBtnOutline: CSSProperties = {
 
 export type ActivityItem = {
   id: string;
-  reportId: bigint;
+  kind: 'vibe' | 'photo';
+  targetId: bigint; // report id (vibe) or photo id (photo) — for deletion
   spotName: string;
   note: string;
   ageMs: number;
   status: Status;
+  thumb?: string; // photo data URL (photo kind)
 };
 
 /* Profile tab — minimal: avatar, handle, neighborhood, Following/Followers (no Posts). */
@@ -1646,7 +1648,7 @@ export function ProfileScreen({
   following,
   activity,
   onEdit,
-  onDeleteVibe,
+  onDeleteActivity,
 }: {
   handle: string;
   avatar: string;
@@ -1655,11 +1657,11 @@ export function ProfileScreen({
   following: number;
   activity: ActivityItem[];
   onEdit: () => void;
-  onDeleteVibe: (reportId: bigint) => void;
+  onDeleteActivity: (item: ActivityItem) => void;
 }) {
   const [showShare, setShowShare] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState<bigint | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<ActivityItem | null>(null);
   const link =
     (typeof window !== 'undefined' ? window.location.origin : 'https://nyc-pulse-two.vercel.app') +
     `/u/${handle}`;
@@ -1882,8 +1884,8 @@ export function ProfileScreen({
               >
                 <button
                   type="button"
-                  onClick={() => setConfirmDelete(a.reportId)}
-                  aria-label="Delete reaction"
+                  onClick={() => setConfirmDelete(a)}
+                  aria-label={a.kind === 'photo' ? 'Delete photo' : 'Delete reaction'}
                   className="press grid place-items-center"
                   style={{
                     position: 'absolute',
@@ -1896,6 +1898,7 @@ export function ProfileScreen({
                     border: '1px solid var(--line-1)',
                     color: 'var(--fg-3)',
                     cursor: 'pointer',
+                    zIndex: 1,
                   }}
                 >
                   <Minus size={14} strokeWidth={2.6} />
@@ -1913,9 +1916,24 @@ export function ProfileScreen({
                   >
                     {a.spotName}
                   </span>
-                  <span style={{ fontSize: 13, color: 'var(--fg-2)' }}>Left a vibe</span>
+                  <span style={{ fontSize: 13, color: 'var(--fg-2)' }}>
+                    {a.kind === 'photo' ? 'Added a photo' : 'Left a vibe'}
+                  </span>
                 </div>
-                {a.note && (
+                {a.kind === 'photo' && a.thumb && (
+                  <img
+                    src={a.thumb}
+                    alt=""
+                    style={{
+                      marginTop: 10,
+                      width: '100%',
+                      height: 150,
+                      objectFit: 'cover',
+                      borderRadius: 'var(--radius-md)',
+                    }}
+                  />
+                )}
+                {a.kind === 'vibe' && a.note && (
                   <p style={{ margin: '8px 0 0', fontSize: 15, color: 'var(--fg-1)', lineHeight: 1.4 }}>{a.note}</p>
                 )}
                 <span style={{ display: 'block', marginTop: 8, fontSize: 12, color: 'var(--fg-3)' }}>
@@ -1957,7 +1975,9 @@ export function ProfileScreen({
             }}
           >
             <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--fg-1)' }}>
-              Do you want to delete this reaction?
+              {confirmDelete.kind === 'photo'
+                ? 'Do you want to delete this photo?'
+                : 'Do you want to delete this reaction?'}
             </div>
             <p style={{ margin: '8px 0 18px', fontSize: 14, color: 'var(--fg-2)' }}>
               This can't be undone.
@@ -1975,7 +1995,7 @@ export function ProfileScreen({
                 type="button"
                 className="press"
                 onClick={() => {
-                  onDeleteVibe(confirmDelete);
+                  onDeleteActivity(confirmDelete);
                   setConfirmDelete(null);
                 }}
                 style={{

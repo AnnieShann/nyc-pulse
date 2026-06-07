@@ -240,23 +240,46 @@ function App() {
     () => new Set(saved.filter(s => s.owner.toHexString() === myHex).map(s => s.spotId)),
     [saved, myHex]
   );
-  // Profile "Activity": my own reports, newest first.
-  const myActivity = useMemo<ActivityItem[]>(
-    () =>
-      [...reports]
-        .filter(r => r.reporter.toHexString() === myHex)
-        .sort((a, b) => tsToMs(b.createdAt) - tsToMs(a.createdAt))
-        .slice(0, 20)
-        .map(r => ({
-          id: r.id.toString(),
-          reportId: r.id,
-          spotName: spotsById.get(r.spotId)?.name ?? 'Spot',
-          note: r.note ?? '',
-          ageMs: now - tsToMs(r.createdAt),
-          status: r.status as Status,
-        })),
-    [reports, myHex, spotsById, now]
-  );
+  // Profile "Activity": my own vibes + photos, newest first.
+  const myActivity = useMemo<ActivityItem[]>(() => {
+    const vibes = reports
+      .filter(r => r.reporter.toHexString() === myHex)
+      .map(r => ({
+        id: `r${r.id.toString()}`,
+        kind: 'vibe' as const,
+        targetId: r.id,
+        spotName: spotsById.get(r.spotId)?.name ?? 'Spot',
+        note: r.note ?? '',
+        status: r.status as Status,
+        thumb: undefined as string | undefined,
+        at: tsToMs(r.createdAt),
+      }));
+    const pics = photos
+      .filter(p => p.photographer.toHexString() === myHex)
+      .map(p => ({
+        id: `p${p.id.toString()}`,
+        kind: 'photo' as const,
+        targetId: p.id,
+        spotName: spotsById.get(p.spotId)?.name ?? 'Spot',
+        note: '',
+        status: 'packed' as Status,
+        thumb: p.data,
+        at: tsToMs(p.createdAt),
+      }));
+    return [...vibes, ...pics]
+      .sort((a, b) => b.at - a.at)
+      .slice(0, 30)
+      .map(x => ({
+        id: x.id,
+        kind: x.kind,
+        targetId: x.targetId,
+        spotName: x.spotName,
+        note: x.note,
+        status: x.status,
+        thumb: x.thumb,
+        ageMs: now - x.at,
+      }));
+  }, [reports, photos, myHex, spotsById, now]);
 
   // Spots on my active trip (most-recently-created trip) → for the "Added" state.
   const myTripSpotIds = useMemo(
@@ -812,7 +835,10 @@ function App() {
           following={followedMembers.size}
           activity={myActivity}
           onEdit={() => setEditProfile(true)}
-          onDeleteVibe={reportId => deleteReport({ reportId })}
+          onDeleteActivity={item => {
+            if (item.kind === 'photo') deletePhoto({ photoId: item.targetId });
+            else deleteReport({ reportId: item.targetId });
+          }}
         />
       )}
 
