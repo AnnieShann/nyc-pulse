@@ -3,10 +3,10 @@ import { Sparkles, Users } from 'lucide-react';
 import { whyMatch, type VibeMatchResult } from '../lib/vibeMatch';
 
 const W = 330;
-const H = 330;
+const H = 350;
 const CX = W / 2;
-const CY = H / 2;
-const R = 92;
+const CY = 172;
+const R = 116; // bigger radius so friend cards clear the center "You" node
 const CARD_W = 84;
 
 function Avatar({ initials, color, url, size }: { initials: string; color: string; url?: string; size: number }) {
@@ -131,7 +131,7 @@ export function VibeGraph({
 
       <div style={{ position: 'relative', width: '100%', maxWidth: W, height: H, margin: '0 auto' }}>
         {/* curved dashed connectors */}
-        <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+        <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none' }}>
           {positions.map(({ f, x, y }) => {
             const mx = (CX + x) / 2 + (y - CY) * 0.12;
             const my = (CY + y) / 2 - (x - CX) * 0.12;
@@ -151,10 +151,13 @@ export function VibeGraph({
           })}
         </svg>
 
-        {/* match % chips on the lines */}
+        {/* match % chips — sit on the curve midpoint, between the You bubble and the card */}
         {positions.map(({ f, x, y }) => {
-          const lx = CX + 0.52 * (x - CX);
-          const ly = CY + 0.52 * (y - CY);
+          // same quadratic as the connector; evaluate at t=0.5 so the chip rides the line
+          const mx = (CX + x) / 2 + (y - CY) * 0.12;
+          const my = (CY + y) / 2 - (x - CX) * 0.12;
+          const lx = 0.25 * CX + 0.5 * mx + 0.25 * x;
+          const ly = 0.25 * CY + 0.5 * my + 0.25 * y;
           return (
             <div
               key={`pct-${f.id}`}
@@ -162,6 +165,7 @@ export function VibeGraph({
                 position: 'absolute',
                 left: lx,
                 top: ly,
+                zIndex: 1,
                 transform: 'translate(-50%,-50%)',
                 fontSize: 11,
                 fontWeight: 800,
@@ -179,7 +183,7 @@ export function VibeGraph({
         })}
 
         {/* ME in the center */}
-        <div style={{ position: 'absolute', left: CX, top: CY, transform: 'translate(-50%,-50%)', textAlign: 'center' }}>
+        <div style={{ position: 'absolute', left: CX, top: CY, zIndex: 2, transform: 'translate(-50%,-50%)', textAlign: 'center' }}>
           <Avatar initials={me.initials} color="var(--pulse)" url={me.avatarUrl} size={60} />
           <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--fg-2)', marginTop: 2 }}>You</div>
         </div>
@@ -195,6 +199,7 @@ export function VibeGraph({
               position: 'absolute',
               left: x,
               top: y,
+              zIndex: 3,
               width: CARD_W,
               transform: `translate(-50%,-50%) scale(${shown ? 1 : 0.6})`,
               opacity: shown ? 1 : 0,
