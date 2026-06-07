@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// Free OpenRouter model — its id ends in ":free". Swap this to the exact id you want.
-const MODEL = 'meta-llama/llama-3.3-70b-instruct:free';
+// Paid OpenRouter model (requires account credit). Swap to any id from openrouter.ai/models.
+const MODEL = 'anthropic/claude-3.5-haiku';
 
 // Intent-only system prompt (used when the client sends no place list).
 const SYSTEM_FILTERS =
