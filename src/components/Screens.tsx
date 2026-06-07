@@ -12,7 +12,6 @@ import {
   User,
   X,
 } from 'lucide-react';
-import { Segmented, SearchResults, type SearchItem } from './pulse-ui';
 import { atHandle, formatAge, NO_DATA_COLOR, STATUS_META, type Status } from '../pulse';
 
 export type Tab = 'explore' | 'itinerary' | 'profile';
@@ -803,23 +802,14 @@ export function ProfileScreen({
   avatar,
   neighborhood,
   activity,
-  savedItems,
-  savedPublic,
-  onPick,
-  onTogglePublic,
   onEdit,
 }: {
   handle: string;
   avatar: string;
   neighborhood: string;
   activity: ActivityItem[];
-  savedItems: SearchItem[];
-  savedPublic: boolean;
-  onPick: (id: bigint) => void;
-  onTogglePublic: () => void;
   onEdit: () => void;
 }) {
-  const [tab, setTab] = useState<'activity' | 'saved'>('activity');
   return (
     <div
       className="h-full w-full overflow-y-auto"
@@ -898,19 +888,19 @@ export function ProfileScreen({
         </div>
       </div>
 
-      <div style={{ marginTop: 16 }}>
-        <Segmented
-          value={tab}
-          onChange={setTab}
-          options={[
-            { k: 'activity', label: 'Activity' },
-            { k: 'saved', label: 'Saved' },
-          ]}
-        />
-      </div>
-
-      {tab === 'activity' ? (
-        <div className="flex flex-col" style={{ gap: 10, marginTop: 14 }}>
+      <div style={{ marginTop: 20 }}>
+        <span
+          style={{
+            fontSize: 12,
+            fontWeight: 700,
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            color: 'var(--fg-3)',
+          }}
+        >
+          Activity
+        </span>
+        <div className="flex flex-col" style={{ gap: 10, marginTop: 12 }}>
           {activity.length === 0 ? (
             <p style={{ fontSize: 14, color: 'var(--fg-3)', padding: '8px 2px' }}>
               No activity yet — drop a vibe on a spot.
@@ -952,40 +942,7 @@ export function ProfileScreen({
             ))
           )}
         </div>
-      ) : (
-        <div className="flex flex-col" style={{ gap: 10, marginTop: 14 }}>
-          <div className="flex items-center justify-between">
-            <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--fg-1)' }}>
-              {savedItems.length} saved
-            </span>
-            <button
-              type="button"
-              className="press"
-              onClick={onTogglePublic}
-              style={{
-                height: 30,
-                padding: '0 12px',
-                borderRadius: 'var(--radius-pill)',
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
-                background: savedPublic ? 'var(--pulse-tint)' : 'var(--ink-600)',
-                border: `1px solid ${savedPublic ? 'var(--line-pulse)' : 'var(--line-1)'}`,
-                color: savedPublic ? 'var(--pulse)' : 'var(--fg-2)',
-              }}
-            >
-              {savedPublic ? 'Public' : 'Make public'}
-            </button>
-          </div>
-          {savedItems.length === 0 ? (
-            <p style={{ fontSize: 14, color: 'var(--fg-3)', padding: '8px 2px' }}>
-              No saved spots yet. Tap the bookmark on a spot.
-            </p>
-          ) : (
-            <SearchResults items={savedItems} onPick={onPick} />
-          )}
-        </div>
-      )}
+      </div>
     </div>
   );
 }

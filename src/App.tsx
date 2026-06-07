@@ -91,7 +91,6 @@ function App() {
   const addPhoto = useReducer(reducers.addPhoto);
   const setProfile = useReducer(reducers.setProfile);
   const toggleSaved = useReducer(reducers.toggleSaved);
-  const setSavedPublic = useReducer(reducers.setSavedPublic);
   const addToTrip = useReducer(reducers.addToTrip);
   const removeTripStop = useReducer(reducers.removeTripStop);
   const createWishlist = useReducer(reducers.createWishlist);
@@ -207,25 +206,6 @@ function App() {
   const mySavedIds = useMemo(
     () => new Set(saved.filter(s => s.owner.toHexString() === myHex).map(s => s.spotId)),
     [saved, myHex]
-  );
-  const savedItems = useMemo<SearchItem[]>(
-    () =>
-      [...mySavedIds]
-        .map(id => spotsById.get(id))
-        .filter((s): s is Spot => !!s)
-        .map(s => {
-          const latest = latestBySpot.get(s.id);
-          const fresh = !!latest && now - tsToMs(latest.createdAt) <= STALE_MS;
-          return {
-            id: s.id,
-            name: s.name,
-            category: s.category,
-            status: (fresh && latest ? (latest.status as Status) : 'stale') as Status | 'stale',
-            waitMinutes: waitBySpot.get(s.id)?.minutes ?? null,
-          };
-        })
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [mySavedIds, spotsById, latestBySpot, waitBySpot, now]
   );
   // Profile "Activity": my own reports, newest first.
   const myActivity = useMemo<ActivityItem[]>(
@@ -663,13 +643,6 @@ function App() {
           avatar={myProfile?.avatar ?? ''}
           neighborhood="New York"
           activity={myActivity}
-          savedItems={savedItems}
-          savedPublic={!!myProfile?.savedPublic}
-          onPick={id => {
-            setView('explore');
-            selectSpot(id);
-          }}
-          onTogglePublic={() => setSavedPublic({ isPublic: !myProfile?.savedPublic })}
           onEdit={() => setEditProfile(true)}
         />
       )}
